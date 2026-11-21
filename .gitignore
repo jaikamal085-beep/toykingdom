@@ -1,0 +1,7 @@
+# Secret keys (Cloudinary, Cloudflare R2, Firebase admin) — never commit these
+.env
+.env.*
+*.key
+
+# Local tooling
+node_modules/
