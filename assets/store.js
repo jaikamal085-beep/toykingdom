@@ -156,6 +156,11 @@ const AUTH_ERRORS = {
   'auth/network-request-failed': 'Network error. Check your internet connection and try again.',
   'auth/user-disabled': 'This account has been disabled.',
   'auth/missing-password': 'Please enter your password.',
+  'auth/operation-not-allowed': 'Google sign-in isn’t switched on yet. Please use email and password for now.',
+  'auth/unauthorized-domain': 'Google sign-in isn’t allowed on this web address yet (add it under Firebase → Authentication → Authorized domains).',
+  'auth/account-exists-with-different-credential': 'An account with this email already exists. Log in with your email and password.',
+  'auth/popup-blocked': 'Your browser blocked the Google sign-in window. Please allow pop-ups and try again.',
+  'auth/web-storage-unsupported': 'Please turn off private browsing or allow cookies to sign in with Google.',
 };
 const authErr = e => new Error(AUTH_ERRORS[e && e.code] || (e && e.message) || 'Something went wrong.');
 function needFb() {
@@ -199,6 +204,28 @@ const Auth = {
       return this.current();
     } catch (e) { throw authErr(e); }
   },
+
+  /* Google sign-in: popup first; full-page redirect if the popup is blocked.
+     Returns the session, or null when the user simply closed the Google window. */
+  async google() {
+    needFb();
+    const provider = new fb.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    try {
+      await fb.signInWithPopup(fbAuth, provider);
+      authUser = fbAuth.currentUser;
+      return this.current();
+    } catch (e) {
+      if (e && (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request')) return null;
+      if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-environment')) {
+        await fb.signInWithRedirect(fbAuth, provider);                 // page navigates away to Google
+        return new Promise(() => {});
+      }
+      throw authErr(e);
+    }
+  },
+
+  _err: e => authErr(e),
 
   async logout() { if (fbAuth) await fb.signOut(fbAuth); authUser = null; },
 
