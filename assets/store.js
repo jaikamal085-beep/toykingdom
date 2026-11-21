@@ -353,3 +353,94 @@ function cloudinaryUpload(file, kind, onProgress) {
     xhr.send(fd);
   });
 }
+
+/* ==========================================================================
+   Orders & saved addresses (Firestore: orders/{orderId}, users/{uid})
+   Until the database rules include "orders", orders fall back to this
+   browser's storage so checkout can still be tested (order.storage = 'local').
+   ========================================================================== */
+async function fsRequest(method, path, body) {
+  const token = await Auth.token();
+  const sep = path.includes('?') ? '&' : '?';
+  const r = await fetch(`${FS_BASE}${path}${sep}key=${CFG.apiKey}`, {
+    method, headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (r.ok) return r.status === 204 ? null : r.json();
+  let m = ''; try { m = (await r.json()).error.message; } catch (e) { /* ignore */ }
+  const err = new Error(`Database error (${r.status}${m ? ': ' + m : ''}).`); err.status = r.status; throw err;
+}
+const fsQueryAuth = async q => (await fsRequest('POST', ':runQuery', { structuredQuery: q }))
+  .filter(x => x.document).map(x => fsFields(x.document.fields));
+
+const LOCAL_ORDERS = 'tk-orders-local';
+const localOrders = () => readLS(LOCAL_ORDERS, []);
+const byNewest = (a, b) => (b.created || 0) - (a.created || 0);
+
+const Orders = {
+  newId() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';                        // no 0/O/1/I mix-ups
+    const r = [...crypto.getRandomValues(new Uint8Array(5))].map(b => A[b % 32]).join('');
+    return `TK-${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}-${r}`;
+  },
+  async create(order) {
+    try {
+      await fsRequest('PATCH', `/orders/${encodeURIComponent(order.id)}?currentDocument.exists=false`, { fields: fsEncode(order).mapValue.fields });
+      return { ...order, storage: 'cloud' };
+    } catch (e) {
+      if (e.status !== 403 && e.status !== 404) throw e;
+      const saved = { ...order, storage: 'local' };                          // rules not published yet
+      writeLS(LOCAL_ORDERS, [saved, ...localOrders()].slice(0, 50));
+      return saved;
+    }
+  },
+  async get(id) {
+    const local = localOrders().find(o => o.id === id);
+    if (local) return local;
+    const d = await fsRequest('GET', `/orders/${encodeURIComponent(id)}`);
+    return { ...fsFields(d.fields), storage: 'cloud' };
+  },
+  async mine() {
+    const me = Auth.current(); if (!me) return [];
+    let cloud = [];
+    try {
+      cloud = await fsQueryAuth({ from: [{ collectionId: 'orders' }], where: { fieldFilter: { field: { fieldPath: 'uid' }, op: 'EQUAL', value: { stringValue: me.uid } } }, limit: 100 });
+    } catch (e) { if (e.status !== 403) throw e; }
+    return [...cloud, ...localOrders().filter(o => o.uid === me.uid)].sort(byNewest);
+  },
+  async all() {                                                              // admin only (rules)
+    let cloud = [];
+    try { cloud = await fsQueryAuth({ from: [{ collectionId: 'orders' }], limit: 300 }); }
+    catch (e) { if (e.status !== 403) throw e; }
+    return [...cloud, ...localOrders()].sort(byNewest);
+  },
+  async setStatus(order, status) {
+    const o = { ...order, status, updated: Date.now() }; delete o.storage;
+    if (order.storage === 'local') { writeLS(LOCAL_ORDERS, localOrders().map(x => x.id === o.id ? { ...o, storage: 'local' } : x)); return; }
+    await fsRequest('PATCH', `/orders/${encodeURIComponent(o.id)}?updateMask.fieldPaths=status&updateMask.fieldPaths=updated`, { fields: { status: fsEncode(status), updated: fsEncode(o.updated) } });
+  },
+};
+
+/* Last delivery address of the logged-in customer (Firestore users/{uid}, with a local copy) */
+const Profile = {
+  key() { const me = Auth.current(); return me ? 'tk-addr-' + me.uid : null; },
+  async getAddress() {
+    const me = Auth.current(); if (!me) return null;
+    try {
+      const d = await fsRequest('GET', `/users/${me.uid}`);
+      const f = fsFields(d.fields);
+      if (f.address) return f.address;
+    } catch (e) { /* no profile yet or rules: use local copy */ }
+    return readLS(this.key(), null);
+  },
+  async saveAddress(address) {
+    const me = Auth.current(); if (!me) return;
+    const a = { ...address, savedAt: Date.now() };
+    writeLS(this.key(), a);
+    try {
+      await fsRequest('PATCH', `/users/${me.uid}?updateMask.fieldPaths=address&updateMask.fieldPaths=email&updateMask.fieldPaths=updated`,
+        { fields: { address: fsEncode(a), email: fsEncode(me.email), updated: fsEncode(Date.now()) } });
+    } catch (e) { /* local copy is enough */ }
+  },
+};

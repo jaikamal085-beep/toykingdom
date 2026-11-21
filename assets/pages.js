@@ -8,6 +8,7 @@ const PAGE_INIT = {
   contact: initContact,
   account: initAccount,
   checkout: () => initCheckout(),   // defined in assets/checkout.js (loaded only on checkout.html)
+  order: () => initOrder(),         // defined in assets/orders.js (loaded only on order.html)
 };
 TK_READY.then(() => (PAGE_INIT[document.body.dataset.page] || (() => {}))());
 
@@ -480,7 +481,8 @@ function initContact() {
 function initAccount() {
   const qs = new URLSearchParams(location.search);
   const rawNext = qs.get('next') || '';
-  const next = /^[a-z-]+\.html$/i.test(rawNext) ? rawNext : '';
+  /* only same-site pages, optionally with a simple query string (e.g. checkout.html?buy=12&qty=2) */
+  const next = /^[a-z-]+\.html(\?[\w=&%.-]*)?$/i.test(rawNext) ? rawNext : '';
   const main = $('#main');
 
   const pwField = (id, label, auto) => `<div class="field"><label for="${id}">${label} <span class="req">*</span></label>
@@ -506,8 +508,16 @@ function initAccount() {
           <a class="btn ${s.role === 'admin' ? 'btn-outline' : ''} btn-lg btn-block" href="collection.html">Continue shopping</a>
           <button class="btn btn-outline btn-block" id="logout">Log out</button>
         </div>
-      </div></div>`;
+      </div>
+      <section class="panel my-orders"><h2>My orders</h2><div id="myOrders"><p class="muted small">Loading your orders…</p></div></section>
+      </div>`;
     $('#logout').onclick = async () => { await Auth.logout(); location.href = 'account.html'; };
+    Orders.mine().then(list => {
+      $('#myOrders').innerHTML = list.length ? `<ul class="plain order-list">${list.map(o => `<li>
+          <div><b>${esc(o.id)}</b><span class="muted small">${fmtDate(o.created)} · ${o.items.reduce((n, i) => n + i.qty, 0)} item(s) · ${inr(o.total)}${o.payment.mode === 'cod' ? ' · Partial COD' : ''}</span></div>
+          <div class="row-actions"><a class="link" href="order.html?id=${encodeURIComponent(o.id)}">View</a><a class="link" href="invoice.html?id=${encodeURIComponent(o.id)}" target="_blank" rel="noopener">Bill</a></div></li>`).join('')}</ul>`
+        : '<p class="muted small">No orders yet.</p>';
+    }).catch(err => { $('#myOrders').innerHTML = `<p class="form-msg bad">${esc(err.message)}</p>`; });
     if (s.adminEmail && !s.verified) {
       const vmsg = $('#verifyMsg');
       const say = (cls, text) => { vmsg.className = 'form-msg ' + cls; vmsg.textContent = text; };
@@ -538,6 +548,7 @@ function initAccount() {
           <button role="tab" class="tab" data-tab="register" aria-selected="${tab === 'register'}">Create account</button>
         </div>
         ${next === 'admin.html' ? '<p class="note">Please log in with the admin account to open the admin page.</p>' : ''}
+        ${next.startsWith('checkout.html') ? '<p class="note">Please log in or create an account to place your order. Your cart is saved.</p>' : ''}
         <form class="cform" id="loginForm" ${tab === 'login' ? '' : 'hidden'} novalidate>
           <div class="field"><label for="lEmail">Email <span class="req">*</span></label><input id="lEmail" name="email" type="email" autocomplete="email" required></div>
           ${pwField('lPass', 'Password', 'current-password')}
@@ -606,6 +617,7 @@ function initAccount() {
   }
 
   const s = Auth.current();
+  if (s && next && next !== 'admin.html') { location.replace(next); return; }   // already logged in: continue
   if (s) renderSignedIn(s); else renderForms(qs.get('tab') === 'register' ? 'register' : 'login');
   document.title = (s ? 'My account' : 'Log in') + ' – Toy Kingdom';
 }

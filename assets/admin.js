@@ -26,6 +26,10 @@ TK_READY.then(function initAdmin() {
       </div>
     </div>
 
+    <section class="panel admin-orders">
+      <div class="panel-head"><h2>Orders</h2><button class="link" id="ordersRefresh" type="button">Refresh</button></div>
+      <div id="ordersBox"><p class="muted small">Loading orders…</p></div>
+    </section>
     <div id="importBox"></div>
     <div id="legacy"></div>
     <div class="stats" id="stats"></div>
@@ -418,6 +422,36 @@ TK_READY.then(function initAdmin() {
   };
   $('#logoutBtn').onclick = async () => { await Auth.logout(); location.href = 'account.html'; };
 
-  resetForm(); renderList(); renderStats(); renderLegacy(); renderImport();
+  /* ---------- orders ---------- */
+  const STATUSES = ['placed', 'packed', 'shipped', 'delivered', 'cancelled'];
+  let orders = [];
+  async function renderOrders() {
+    const box = $('#ordersBox');
+    try { orders = await Orders.all(); }
+    catch (err) { box.innerHTML = `<p class="form-msg bad">${esc(err.message)}</p>`; return; }
+    const local = orders.filter(o => o.storage === 'local').length;
+    box.innerHTML = (local ? `<p class="note small">${local} order(s) are saved only in this browser. Publish the updated database rules (orders section) so orders from every customer appear here.</p>` : '')
+      + (orders.length ? `<div class="table-wrap"><table class="ptable">
+        <thead><tr><th>Order</th><th>Customer</th><th>Amount</th><th>Payment</th><th>Status</th><th class="right">Bill</th></tr></thead>
+        <tbody>${orders.map(o => `<tr>
+          <td><b>${esc(o.id)}</b><span class="muted small">${fmtDate(o.created, true)}${o.test ? ' · test' : ''}</span></td>
+          <td>${esc(o.address.name)}<span class="muted small">${esc(o.address.city)}, ${esc(o.address.pincode)} · ${esc(o.address.phone)}</span></td>
+          <td>${inr(o.total)}<span class="muted small">${o.items.reduce((n, i) => n + i.qty, 0)} item(s)</span></td>
+          <td>${esc(o.payment.method)}${o.payment.dueOnDelivery ? `<span class="muted small">collect ${inr(o.payment.dueOnDelivery)}</span>` : ''}</td>
+          <td><select class="select mini-select" data-status="${esc(o.id)}" aria-label="Status of ${esc(o.id)}">${STATUSES.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}</select></td>
+          <td class="right"><a class="link" href="invoice.html?id=${encodeURIComponent(o.id)}" target="_blank" rel="noopener">Print bill</a></td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="muted small">No orders yet.</p>');
+  }
+  $('#ordersBox').addEventListener('change', async e => {
+    const sel = e.target.closest('[data-status]'); if (!sel) return;
+    const o = orders.find(x => x.id === sel.dataset.status); if (!o) return;
+    sel.disabled = true;
+    try { await Orders.setStatus(o, sel.value); o.status = sel.value; toast(`${o.id}: ${sel.value}`); }
+    catch (err) { toast(err.message); sel.value = o.status; }
+    sel.disabled = false;
+  });
+  $('#ordersRefresh').onclick = renderOrders;
+
+  resetForm(); renderList(); renderStats(); renderLegacy(); renderImport(); renderOrders();
   document.title = 'Admin – Toy Kingdom';
 });

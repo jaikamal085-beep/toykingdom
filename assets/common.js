@@ -6,6 +6,9 @@ const SITE = {
   email: 'toykingdom1309@gmail.com', hours: 'Mon – Fri, 10am – 10pm',
   ig: 'https://www.instagram.com/toykingdom1309/', yt: 'https://www.youtube.com/@ToyKingdom-1309',
   map: 'https://maps.app.goo.gl/UDhWqDFfMkqGMgtW7', gst: '33BGCPL8590H1Z7',
+  legalName: 'Toy Kingdom',
+  address: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu - 613006'],
+  state: 'Tamil Nadu',
   logo: IMG_BASE + '2025/04/toykingdomlogo.png',
   refund: 'refund-policy.html', account: 'https://toykingdomonline.com/my-account/',
 };
@@ -105,6 +108,10 @@ function videoThumb(url) {
     return cld(url, 'so_1,q_auto,c_fill,w_200,h_200').replace(/\.[a-z0-9]+$/i, '.jpg');
   return '';
 }
+
+const fmtDate = (t, withTime = false) => new Date(t).toLocaleString('en-IN', withTime
+  ? { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }
+  : { day: 'numeric', month: 'short', year: 'numeric' });
 
 /* Delivery & payment rules (used by the product page, cart and checkout)
    freeAbove:     orders of this amount or more ship free

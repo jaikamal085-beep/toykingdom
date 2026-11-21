@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bill – Toy Kingdom</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="https://toykingdomonline.com/wp-content/uploads/2025/04/toykingdomlogo.png">
+<style>
+  :root { --ink:#111; --muted:#555; --line:#222; --soft:#bbb; --brand:#8649FB; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#e9e7ef; color:var(--ink); font:12px/1.45 Arial, Helvetica, sans-serif; }
+  .toolbar { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:8px; justify-content:center; align-items:center; padding:12px; background:#fff; border-bottom:1px solid #ddd; }
+  .toolbar button, .toolbar a { font:600 14px Arial, sans-serif; padding:10px 16px; border-radius:999px; border:1.5px solid var(--brand); background:var(--brand); color:#fff; cursor:pointer; text-decoration:none; }
+  .toolbar .ghost { background:#fff; color:var(--brand); }
+  .toolbar .hint { width:100%; text-align:center; color:var(--muted); font-size:12px; }
+  .sheet { position:relative; width:210mm; min-height:297mm; margin:16px auto; padding:10mm; background:#fff; box-shadow:0 4px 24px rgba(0,0,0,.12); overflow:hidden; }
+  .err { color:#b00020; font-size:15px; }
+  .k { color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+  .watermark { position:absolute; inset:0; display:grid; place-items:center; font:900 110px Arial; color:rgba(200,0,0,.07); transform:rotate(-28deg); pointer-events:none; z-index:0; }
+
+  /* ---- shipping label ---- */
+  .label { position:relative; border:2px solid var(--line); border-radius:4px; }
+  .label-top { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; padding:8px 10px; border-bottom:2px solid var(--line); }
+  .logo { height:42px; width:auto; }
+  .lbl-order .v { font:700 18px Arial; letter-spacing:.02em; }
+  .pay-box { border:2px solid var(--line); padding:6px 10px; text-align:center; min-width:170px; }
+  .pay-box.cod { background:#111; color:#fff; }
+  .pay-box.cod .pk { color:#ddd; }
+  .pay-box .pk { font-size:10px; font-weight:700; letter-spacing:.08em; }
+  .pay-box .pv { font:800 17px Arial; }
+  .ship-to { padding:10px 12px; border-bottom:2px solid var(--line); }
+  .to-name { font:800 20px Arial; margin-top:2px; }
+  .to-addr { font-size:15px; line-height:1.4; margin-top:2px; }
+  .to-pin { font:900 26px Arial; letter-spacing:.06em; margin-top:4px; }
+  .to-phone { font:700 15px Arial; }
+  .label-foot { padding:8px 12px; text-align:center; }
+  .from { text-align:left; font-size:11px; margin-bottom:6px; }
+  .barcode { width:80%; max-width:120mm; height:16mm; display:block; margin:0 auto; fill:#000; }
+  .bc-text { font:700 12px monospace; letter-spacing:.2em; }
+  .cutline { position:relative; margin:9mm 0 7mm; border-top:1.5px dashed #777; text-align:center; }
+  .cutline span { position:relative; top:-9px; background:#fff; padding:0 8px; color:#666; font-size:11px; }
+
+  /* ---- tax invoice ---- */
+  .invoice { position:relative; }
+  .inv-head { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--soft); padding-bottom:6px; }
+  .inv-title { text-align:right; display:grid; font-size:13px; }
+  .inv-title span { font-size:11px; color:var(--muted); }
+  .inv-parties { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:8px 0; border-bottom:1px solid var(--soft); }
+  .r-al { text-align:right; }
+  .inv-table { width:100%; border-collapse:collapse; margin-top:8px; font-size:11px; }
+  .inv-table th, .inv-table td { border:1px solid var(--line); padding:4px 5px; vertical-align:top; }
+  .inv-table th { background:#eee; font-size:10.5px; }
+  .inv-table .c { text-align:center; } .inv-table .r { text-align:right; white-space:nowrap; }
+  .inv-table .sub { color:var(--muted); font-size:10px; }
+  .inv-pay { display:flex; justify-content:space-between; gap:14px; margin-top:8px; align-items:flex-end; }
+  .sign { text-align:right; } .sign-space { height:28px; }
+  .fine { color:var(--muted); font-size:10px; margin-top:8px; }
+
+  @page { size:A4; margin:0; }
+  @media print {
+    body { background:#fff; }
+    .toolbar { display:none; }
+    .sheet { margin:0; box-shadow:none; width:210mm; min-height:auto; }
+    body[data-print="label"] .cutline, body[data-print="label"] .invoice { display:none; }
+    body[data-print="label"] .label { width:150mm; }
+    body[data-print="invoice"] .label, body[data-print="invoice"] .cutline { display:none; }
+  }
+  @media (max-width:820px) { .sheet { width:auto; min-height:0; margin:8px; padding:12px; } .inv-parties { grid-template-columns:1fr; } .r-al { text-align:left; } .watermark { font-size:60px; } }
+</style>
+</head>
+<body data-print="all">
+<div class="toolbar">
+  <button id="pAll">Print label + invoice (A4)</button>
+  <button id="pLabel" class="ghost">Print label only</button>
+  <button id="pInv" class="ghost">Print invoice only</button>
+  <a href="account.html" class="ghost">My orders</a>
+  <span class="hint">Tip: in the print window choose “Save as PDF” to keep a copy. Cut the label along the dashed line and paste it on the parcel.</span>
+</div>
+<main class="sheet" id="sheet"><p>Loading bill…</p></main>
+<script src="assets/products.js?v=20261121h"></script>
+<script src="assets/firebase-config.js?v=20261121h"></script>
+<script src="assets/store.js?v=20261121h"></script>
+<script src="assets/invoice.js?v=20261121h"></script>
+<script type="module" src="assets/fb.js?v=20261121h"></script>
+</body>
+</html>
