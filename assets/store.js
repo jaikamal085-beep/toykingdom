@@ -41,6 +41,7 @@ async function fsCommit(docs, onProgress) {
 const readLS = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (e) { return d; } };
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
 const normEmail = e => String(e || '').trim().toLowerCase();
+const cleanName = s => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 60);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
@@ -175,9 +176,21 @@ const Auth = {
     return {
       uid: u.uid, email, name: u.displayName || email.split('@')[0], verified: !!u.emailVerified,
       role: adminEmail && u.emailVerified ? 'admin' : 'customer', adminEmail,
+      photo: u.photoURL || '',
+      providers: (u.providerData || []).map(p => p.providerId),        // 'google.com', 'password'
+      since: u.metadata && u.metadata.creationTime ? Date.parse(u.metadata.creationTime) : 0,
     };
   },
   isAdmin() { const s = this.current(); return !!s && s.role === 'admin'; },
+
+  async updateName(name) {
+    name = cleanName(name);
+    if (name.length < 2) throw new Error('Please enter your name.');
+    needFb();
+    try { await fb.updateProfile(fbAuth.currentUser, { displayName: name }); } catch (e) { throw authErr(e); }
+    authUser = fbAuth.currentUser;
+    return this.current();
+  },
 
   async register(name, email, password) {
     name = String(name || '').trim(); email = normEmail(email);
@@ -460,6 +473,14 @@ const Profile = {
       if (f.address) return f.address;
     } catch (e) { /* no profile yet or rules: use local copy */ }
     return readLS(this.key(), null);
+  },
+  async removeAddress() {
+    const me = Auth.current(); if (!me) return;
+    try { localStorage.removeItem(this.key()); } catch (e) { /* ignore */ }
+    try {
+      await fsRequest('PATCH', `/users/${me.uid}?updateMask.fieldPaths=address&updateMask.fieldPaths=updated`,
+        { fields: { address: { nullValue: null }, updated: fsEncode(Date.now()) } });
+    } catch (e) { /* local copy removed anyway */ }
   },
   async saveAddress(address) {
     const me = Auth.current(); if (!me) return;

@@ -33,14 +33,13 @@
   .pay.cod { background:#111; color:#fff; }
   .pay .t { font-size:8.5px; font-weight:700; letter-spacing:.08em; }
   .pay .v { font:800 13px Arial; }
-  .to { padding:2mm 3mm; flex:1; display:flex; flex-direction:column; }
-  .to .k, .from .k { font-size:8.5px; }
-  .to .nm { font:800 18px Arial; margin-top:1mm; }
-  .to .ad { font-size:13.5px; line-height:1.4; margin-top:.5mm; }
-  .to .pin { font:900 26px Arial; letter-spacing:.06em; margin-top:auto; padding-top:2mm; }
-  .to .ph { font:700 14px Arial; }
-  .from { padding:1.6mm 3mm; font-size:9.5px; line-height:1.35; }
-  .from b { font-size:10.5px; }
+  /* receiver and sender: identical blocks, equal height, no empty space */
+  .party { flex:1 1 0; min-height:0; padding:2mm 3mm; display:flex; flex-direction:column; justify-content:space-evenly; overflow:hidden; }
+  .party .k { font-size:8.5px; }
+  .party .nm { font:800 15px Arial; line-height:1.2; }
+  .party .ad { font-size:12px; line-height:1.35; }
+  .party .pin { font:900 19px Arial; letter-spacing:.05em; line-height:1.1; }
+  .party .ph { font:700 12px Arial; }
   .bc { text-align:center; padding-top:1mm; }
   .barcode { width:92%; height:13mm; display:block; margin:0 auto; fill:#000; }
   .bc-text { font:700 10px monospace; letter-spacing:.2em; }
@@ -84,10 +83,10 @@
 <body data-print="invoice">
 <div class="toolbar" id="tools"></div>
 <div id="out"><p class="sheet">Loading bill…</p></div>
-<script src="assets/products.js?v=20261121j"></script>
-<script src="assets/firebase-config.js?v=20261121j"></script>
-<script src="assets/store.js?v=20261121j"></script>
-<script src="assets/invoice.js?v=20261121j"></script>
-<script type="module" src="assets/fb.js?v=20261121j"></script>
+<script src="assets/products.js?v=20261121k"></script>
+<script src="assets/firebase-config.js?v=20261121k"></script>
+<script src="assets/store.js?v=20261121k"></script>
+<script src="assets/invoice.js?v=20261121k"></script>
+<script type="module" src="assets/fb.js?v=20261121k"></script>
 </body>
 </html>

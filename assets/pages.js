@@ -642,6 +642,7 @@ function initAccount() {
 
   const s = Auth.current();
   if (s && next && next !== 'admin.html') { location.replace(next); return; }   // already logged in: continue
-  if (s) renderSignedIn(s); else renderForms(qs.get('tab') === 'register' ? 'register' : 'login');
+  if (s) (typeof renderAccountDashboard === 'function' ? renderAccountDashboard(s) : renderSignedIn(s));   // dashboard: assets/account.js
+  else renderForms(qs.get('tab') === 'register' ? 'register' : 'login');
   document.title = (s ? 'My account' : 'Log in') + ' – Toy Kingdom';
 }

@@ -11,6 +11,7 @@ const INVOICE = { gstRate: null, hsn: '9503' };
 const SELLER = {
   name: 'Toy Kingdom', gstin: '33BGCPL8590H1Z7', state: 'Tamil Nadu', phone: '+91 82486 40441', email: 'toykingdom1309@gmail.com',
   address: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu - 613006'],
+  addressLines: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu'], pin: '613006',
   logo: 'https://toykingdomonline.com/wp-content/uploads/2025/04/toykingdomlogo.png',
 };
 
@@ -60,6 +61,15 @@ function addressLines(a) {
     `${a.city}${a.district && a.district.toLowerCase() !== String(a.city).toLowerCase() ? ' (' + a.district + ' dist.)' : ''}, ${a.state}`].filter(Boolean);
 }
 
+/* Receiver and sender blocks share one layout and get equal space on the label. */
+const party = (title, name, lines, pin, phone) => `<div class="box party">
+  <span class="k">${h(title)}</span>
+  <div class="nm">${h(name)}</div>
+  <div class="ad">${lines.map(h).join('<br>')}</div>
+  <div class="pin">PIN ${h(pin)}</div>
+  <div class="ph">Mobile: ${h(phone)}</div>
+</div>`;
+
 /* Shipping label, exactly 1/4 of an A4 sheet (A6 portrait). Admin only. */
 function labelHTML(o) {
   const a = o.address, pay = o.payment, cod = pay.mode === 'cod' && pay.dueOnDelivery > 0;
@@ -72,17 +82,8 @@ function labelHTML(o) {
         ? `<div class="t">PARTIAL COD · COLLECT</div><div class="v">${rs(pay.dueOnDelivery)}</div><div class="t">IN CASH</div>`
         : '<div class="t">PREPAID</div><div class="v">DO NOT</div><div class="t">COLLECT CASH</div>'}</div>
     </div>
-    <div class="box to">
-      <span class="k">Deliver to (receiver)</span>
-      <div class="nm">${h(a.name)}</div>
-      <div class="ad">${addressLines(a).map(h).join('<br>')}</div>
-      <div class="pin">PIN ${h(a.pincode)}</div>
-      <div class="ph">Mobile: ${h(a.phone)}${a.alt ? ' / ' + h(a.alt) : ''}</div>
-    </div>
-    <div class="box from">
-      <span class="k">From (sender) · return address</span><br>
-      <b>${h(SELLER.name)}</b>, ${SELLER.address.map(h).join(', ')}<br>Mobile: ${h(SELLER.phone)} · GSTIN: ${h(SELLER.gstin)}
-    </div>
+    ${party('Deliver to (receiver)', a.name, addressLines(a), a.pincode, a.phone + (a.alt ? ' / ' + a.alt : ''))}
+    ${party('From (sender) · return address', SELLER.name, SELLER.addressLines, SELLER.pin, SELLER.phone)}
     <div class="bc">${barcode(o.id)}<div class="bc-text">${h(o.id)}</div></div>
   </div>
   <div class="cut-hint">✂ The label is exactly ¼ of the A4 sheet (105 × 148 mm).<br>Cut along the dashed lines and paste it on the parcel.<br>On an A6 label printer it fills the whole label.</div>`;
