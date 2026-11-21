@@ -748,15 +748,15 @@ body.modal-open{overflow:hidden}
 .ostatus.shipped,.ostatus.packed{background:#FFF4D6;color:#8a5a00}
 .ostatus.test{background:#eee;color:#555}
 .obadges{display:flex;gap:6px;flex-wrap:wrap}
-.track{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);font-size:12px;color:var(--muted)}
-.track li{position:relative;display:grid;justify-items:center;gap:6px;text-align:center}
-.track li::before{content:"";position:absolute;top:11px;left:-50%;width:100%;height:3px;background:var(--line)}
-.track li:first-child::before{display:none}
-.track li.done::before{background:var(--success)}
-.track .dot{position:relative;z-index:1;width:24px;height:24px;border-radius:50%;background:var(--surface);border:3px solid var(--line);display:grid;place-items:center}
-.track li.done .dot{background:var(--success);border-color:var(--success);color:#fff}
-.track .dot .ic{width:13px;height:13px;stroke-width:3}
-.track li.now{color:var(--text);font-weight:600}
+.otrack{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);font-size:12px;color:var(--muted)}
+.otrack li{position:relative;display:grid;justify-items:center;gap:6px;text-align:center}
+.otrack li::before{content:"";position:absolute;top:11px;left:-50%;width:100%;height:3px;background:var(--line)}
+.otrack li:first-child::before{display:none}
+.otrack li.done::before{background:var(--success)}
+.otrack .dot{position:relative;z-index:1;width:24px;height:24px;border-radius:50%;background:var(--surface);border:3px solid var(--line);display:grid;place-items:center}
+.otrack li.done .dot{background:var(--success);border-color:var(--success);color:#fff}
+.otrack .dot .ic{width:13px;height:13px;stroke-width:3}
+.otrack li.now{color:var(--text);font-weight:600}
 .ocard-actions{display:flex;flex-wrap:wrap;gap:8px}
 .otabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px}
 .otabs button{padding:8px 14px;border-radius:999px;font-size:14px;font-weight:500;color:var(--muted);border:1px solid var(--line);background:var(--surface)}
@@ -781,7 +781,7 @@ body.modal-open{overflow:hidden}
 @media (max-width:640px){
   .ocard-id{margin-left:0;text-align:left}
   .ocard-items{flex-direction:column}
-  .track{font-size:11px}
+  .otrack{font-size:11px}
   .ocard-actions .btn{flex:1 1 calc(50% - 8px)}
   .acct-head-actions{width:100%}.acct-head-actions .btn{flex:1}
 }

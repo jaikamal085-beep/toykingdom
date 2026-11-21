@@ -43,7 +43,7 @@ function renderAccountDashboard(s) {
   function tracker(o) {
     if (o.status === 'cancelled') return '<p class="small muted">This order was cancelled.</p>';
     const at = Math.max(0, ORDER_STEPS.indexOf(o.status));
-    return `<ol class="track">${ORDER_STEPS.map((st, i) => `<li class="${i <= at ? 'done' : ''} ${i === at ? 'now' : ''}"><span class="dot">${i <= at ? icon('check') : ''}</span><span>${STATUS_LABEL[st]}</span></li>`).join('')}</ol>`;
+    return `<ol class="otrack">${ORDER_STEPS.map((st, i) => `<li class="${i <= at ? 'done' : ''} ${i === at ? 'now' : ''}"><span class="dot">${i <= at ? icon('check') : ''}</span><span>${STATUS_LABEL[st]}</span></li>`).join('')}</ol>`;
   }
   function orderCard(o) {
     const pieces = o.items.reduce((n, i) => n + i.qty, 0);

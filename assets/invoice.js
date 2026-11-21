@@ -70,7 +70,7 @@ const party = (title, name, lines, pin, phone) => `<div class="box party">
   <div class="ph">Mobile: ${h(phone)}</div>
 </div>`;
 
-/* Shipping label, exactly 1/4 of an A4 sheet (A6 portrait). Admin only. */
+/* Shipping label, printed as a full A4 page. Admin only. */
 function labelHTML(o) {
   const a = o.address, pay = o.payment, cod = pay.mode === 'cod' && pay.dueOnDelivery > 0;
   const pieces = o.items.reduce((n, i) => n + i.qty, 0);
@@ -86,7 +86,7 @@ function labelHTML(o) {
     ${party('From (sender) · return address', SELLER.name, SELLER.addressLines, SELLER.pin, SELLER.phone)}
     <div class="bc">${barcode(o.id)}<div class="bc-text">${h(o.id)}</div></div>
   </div>
-  <div class="cut-hint">✂ The label is exactly ¼ of the A4 sheet (105 × 148 mm).<br>Cut along the dashed lines and paste it on the parcel.<br>On an A6 label printer it fills the whole label.</div>`;
+  `;
 }
 
 /* Tax invoice (A4). Shown to customers and admin. */
@@ -154,14 +154,14 @@ function render(o, admin) {
   document.title = `${admin ? 'Label & bill' : 'Bill'} ${o.id} – Toy Kingdom`;
   const tools = document.getElementById('tools'), out = document.getElementById('out');
   tools.innerHTML = admin
-    ? `<button id="pLabel">Print shipping label (¼ A4)</button>
+    ? `<button id="pLabel">Print shipping label (A4)</button>
        <button id="pInv" class="ghost">Print invoice (A4)</button>
        <a href="admin.html" class="ghost">Back to orders</a>
        <span class="hint">Admin view: customers see only the invoice. Choose “Save as PDF” in the print window to keep a copy.</span>`
     : `<button id="pInv">Print / download bill</button>
        <a href="account.html" class="ghost">My orders</a>
        <span class="hint">Choose “Save as PDF” in the print window to download your bill.</span>`;
-  out.innerHTML = (admin ? `<div class="page-title t-lbl">Shipping label: ¼ of A4 (105 × 148 mm)</div>
+  out.innerHTML = (admin ? `<div class="page-title t-lbl">Shipping label (full A4 page)</div>
       <section class="sheet label-sheet" id="labelSheet">${labelHTML(o)}</section>
       <div class="page-title t-inv">Tax invoice (A4)</div>` : '')
     + `<section class="sheet" id="invoiceSheet">${invoiceHTML(o)}</section>`;

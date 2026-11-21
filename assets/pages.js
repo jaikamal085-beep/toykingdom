@@ -111,13 +111,18 @@ function initHome() {
   $('#heroNext').onclick = () => { go(idx + 1); play(); };
   hero.addEventListener('mouseenter', () => clearInterval(timer));
   hero.addEventListener('mouseleave', play);
-  let x0 = null;
-  hero.addEventListener('touchstart', e => (x0 = e.touches[0].clientX), { passive: true });
+  /* swipe: only a clearly sideways gesture changes the slide (scrolling the page up/down must not) */
+  let x0 = null, y0 = 0;
+  hero.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; clearInterval(timer); }, { passive: true });
   hero.addEventListener('touchend', e => {
     if (x0 === null) return;
-    const dx = e.changedTouches[0].clientX - x0; x0 = null;
-    if (Math.abs(dx) > 40) { go(idx + (dx < 0 ? 1 : -1)); play(); }
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) go(idx + (dx < 0 ? 1 : -1));
+    play();
   });
+  hero.addEventListener('touchcancel', () => { x0 = null; play(); });
+  /* don't keep sliding while the tab is in the background */
+  document.addEventListener('visibilitychange', () => (document.hidden ? clearInterval(timer) : play()));
   go(0); play();
   $$('[data-carousel]').forEach(initCarousel);
 }
@@ -384,12 +389,12 @@ ${SITE.hours}</div></details>
   };
   if ($('#thumbs')) $('#thumbs').addEventListener('click', e => { const t = e.target.closest('.thumb'); if (t) show(+t.dataset.i); });
   $('#gMain').addEventListener('click', e => { const b = e.target.closest('[data-step]'); if (b) show(cur + +b.dataset.step); });
-  let x0 = null;
-  $('#gMain').addEventListener('touchstart', e => (x0 = e.touches[0].clientX), { passive: true });
+  let x0 = null, y0 = 0;
+  $('#gMain').addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
   $('#gMain').addEventListener('touchend', e => {
     if (x0 === null || media.length < 2 || media[cur].type === 'video') return;   // don't hijack swipes on the video controls
-    const dx = e.changedTouches[0].clientX - x0; x0 = null;
-    if (Math.abs(dx) > 40) show(cur + (dx < 0 ? 1 : -1));
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) show(cur + (dx < 0 ? 1 : -1));   // sideways swipes only
   });
 
   /* quantity + buy */
