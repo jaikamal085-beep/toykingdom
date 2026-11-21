@@ -16,7 +16,7 @@ window.FIRESTORE_DB = "default";
 
 /* Order e-mails: URL of the deployed Google Apps Script web app (email/order-mailer.gs).
    Empty = e-mails switched off. Public value; the script itself checks every request. */
-window.MAIL_ENDPOINT = "";
+window.MAIL_ENDPOINT = "https://script.google.com/macros/s/AKfycbxDbp_ArvT0MRVhcP8drFLfLWZuh2aMpg0YA80Hqwj7dhYIQ6xju6gvJOlPJ8y2PWX0jQ/exec";
 
 /* Cloudinary: unsigned upload preset (public values, no secret here). */
 window.CLOUDINARY = { cloudName: "jk6jvwvb", uploadPreset: "toykingdom_products", folder: "toykingdom/products" };
