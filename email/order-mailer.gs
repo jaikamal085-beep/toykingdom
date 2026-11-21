@@ -58,11 +58,13 @@ function doPost(e) {
       const label = pdfBlob(body.labelPdf, 'Shipping-label-' + id + '.pdf');
       const test = o.test ? '[TEST] ' : '';
 
+      /* plain-text + HTML versions together: HTML-only mail with attachments is more likely to be filtered as spam */
       MailApp.sendEmail({
         to: o.email,
         name: CFG.storeName,
         replyTo: CFG.adminEmail,
         subject: test + 'Your Toy Kingdom order ' + id + ' is confirmed',
+        body: plainText(o, false),
         htmlBody: customerHtml(o),
         attachments: invoice ? [invoice] : [],
       });
@@ -71,6 +73,7 @@ function doPost(e) {
         name: CFG.storeName + ' Orders',
         replyTo: o.email,
         subject: test + 'New order ' + id + ' – ' + rs(o.total) + (o.payment && o.payment.mode === 'cod' ? ' (Partial COD)' : ' (Prepaid)'),
+        body: plainText(o, true),
         htmlBody: adminHtml(o),
         attachments: [invoice, label].filter(Boolean),
       });
@@ -149,6 +152,23 @@ function shell(inner) {
     '<div style="background:#8649FB;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0;font-size:20px;font-weight:bold">' + CFG.storeName + '</div>' +
     '<div style="border:1px solid #eee;border-top:0;padding:22px;border-radius:0 0 12px 12px">' + inner + '</div>' +
     '<p style="font-size:12px;color:#888;text-align:center;margin-top:14px">' + CFG.storeName + ' · ' + CFG.phone + ' · <a href="' + CFG.siteUrl + '" style="color:#8649FB">' + CFG.siteUrl + '</a></p></div>';
+}
+
+/* Plain-text version of the e-mail (sent together with the HTML version) */
+function plainText(o, admin) {
+  const a = o.address, p = o.payment || {};
+  const lines = [];
+  if (o.test) lines.push('TEST ORDER: no money was taken.', '');
+  lines.push(admin ? 'New order ' + o.id + ' (' + day(o.created) + ')' : 'Hi ' + a.name.split(' ')[0] + ', thank you! Your order ' + o.id + ' is confirmed.', '');
+  o.items.forEach(function (i) { lines.push('- ' + i.name + ' x ' + i.qty + ' = ' + rs(i.price * i.qty)); });
+  lines.push('', 'Total: ' + rs(o.total), 'Paid online: ' + rs(p.paidNow) + (p.dueOnDelivery ? ' | Pay on delivery (cash): ' + rs(p.dueOnDelivery) : ''), '');
+  lines.push((admin ? 'Ship to: ' : 'Delivering to: ') + a.name + ', ' + a.house + ', ' + a.area + (a.landmark ? ', Landmark: ' + a.landmark : '') + ', ' + a.city + ', ' + a.state + ' - ' + a.pincode + ' | Mobile: ' + a.phone);
+  lines.push('');
+  if (admin) lines.push('Customer: ' + o.email, 'Attached: shipping label and bill.', 'Admin orders: ' + CFG.siteUrl + 'admin.html');
+  else lines.push('Delivery in 3-5 working days. Your bill is attached as a PDF.', 'View your order: ' + CFG.siteUrl + 'order.html?id=' + encodeURIComponent(o.id),
+    'Questions? Reply to this e-mail or WhatsApp ' + CFG.phone + '.');
+  lines.push('', CFG.storeName + ' · ' + CFG.siteUrl);
+  return lines.join('\n');
 }
 
 function customerHtml(o) {

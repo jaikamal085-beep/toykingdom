@@ -49,7 +49,7 @@ function initOrder() {
       else {
         st.innerHTML = `${icon('mail')} Sending your confirmation e-mail with the bill to <b>${esc(o.email)}</b>…`;
         Mailer.sendOrder(o)
-          .then(res => { st.innerHTML = res.ok ? `${icon('check')} Confirmation e-mail with your bill sent to <b>${esc(o.email)}</b>.` : ''; })
+          .then(res => { st.innerHTML = res.ok ? `${icon('check')} Confirmation e-mail with your bill sent to <b>${esc(o.email)}</b>. Not in your inbox? Check <b>Spam</b> and tap “Not spam” so our e-mails reach you.` : ''; })
           .catch(err => { st.className = 'mail-status bad'; st.textContent = `We couldn't send the confirmation e-mail (${err.message}). You can still download your bill below.`; });
       }
     }
