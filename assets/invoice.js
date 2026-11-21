@@ -55,18 +55,51 @@ function taxOf(gross, sameState) {
   return sameState ? { net, rows: [['CGST', r / 2, tax / 2], ['SGST', r / 2, tax / 2]], tax } : { net, rows: [['IGST', r, tax]], tax };
 }
 
-function render(o) {
+function addressLines(a) {
+  return [a.house, a.area, a.landmark ? 'Landmark: ' + a.landmark : '',
+    `${a.city}${a.district && a.district.toLowerCase() !== String(a.city).toLowerCase() ? ' (' + a.district + ' dist.)' : ''}, ${a.state}`].filter(Boolean);
+}
+
+/* Shipping label, exactly 1/4 of an A4 sheet (A6 portrait). Admin only. */
+function labelHTML(o) {
+  const a = o.address, pay = o.payment, cod = pay.mode === 'cod' && pay.dueOnDelivery > 0;
+  const pieces = o.items.reduce((n, i) => n + i.qty, 0);
+  return `<div class="label">
+    <div class="box lb-head">
+      <img src="${SELLER.logo}" alt="Toy Kingdom" class="logo">
+      <div class="ord"><span class="k">Order</span><b>${h(o.id)}</b><span>${day(o.created)} · ${pieces} item${pieces === 1 ? '' : 's'}</span></div>
+      <div class="pay ${cod ? 'cod' : ''} box">${cod
+        ? `<div class="t">PARTIAL COD · COLLECT</div><div class="v">${rs(pay.dueOnDelivery)}</div><div class="t">IN CASH</div>`
+        : '<div class="t">PREPAID</div><div class="v">DO NOT</div><div class="t">COLLECT CASH</div>'}</div>
+    </div>
+    <div class="box to">
+      <span class="k">Deliver to (receiver)</span>
+      <div class="nm">${h(a.name)}</div>
+      <div class="ad">${addressLines(a).map(h).join('<br>')}</div>
+      <div class="pin">PIN ${h(a.pincode)}</div>
+      <div class="ph">Mobile: ${h(a.phone)}${a.alt ? ' / ' + h(a.alt) : ''}</div>
+    </div>
+    <div class="box from">
+      <span class="k">From (sender) · return address</span><br>
+      <b>${h(SELLER.name)}</b>, ${SELLER.address.map(h).join(', ')}<br>Mobile: ${h(SELLER.phone)} · GSTIN: ${h(SELLER.gstin)}
+    </div>
+    <div class="bc">${barcode(o.id)}<div class="bc-text">${h(o.id)}</div></div>
+  </div>
+  <div class="cut-hint">✂ The label is exactly ¼ of the A4 sheet (105 × 148 mm).<br>Cut along the dashed lines and paste it on the parcel.<br>On an A6 label printer it fills the whole label.</div>`;
+}
+
+/* Tax invoice (A4). Shown to customers and admin. */
+function invoiceHTML(o) {
   const a = o.address, pay = o.payment, same = (a.state || '').toLowerCase() === SELLER.state.toLowerCase();
   const items = o.items.map(i => ({ ...i, gross: i.price * i.qty }));
   if (o.shipping) items.push({ name: 'Shipping Charges', qty: 1, price: o.shipping, gross: o.shipping, ship: true });
-  const pieces = o.items.reduce((n, i) => n + i.qty, 0);
   const cod = pay.mode === 'cod' && pay.dueOnDelivery > 0;
-  const addrLines = [a.house, a.area, a.landmark ? 'Landmark: ' + a.landmark : '', `${a.city}${a.district && a.district.toLowerCase() !== a.city.toLowerCase() ? ' (' + a.district + ' dist.)' : ''}`, a.state].filter(Boolean);
-  let totNet = 0, totTax = 0;
+  const addrLines = addressLines(a);
+  let totTax = 0;
 
   const rows = items.map((it, n) => {
     const t = taxOf(it.gross, same);
-    if (t) { totNet += t.net; totTax += t.tax; }
+    if (t) totTax += t.tax;
     return `<tr>
       <td class="c">${n + 1}</td>
       <td>${h(it.name)}${it.ship ? '' : `<div class="sub">${it.sku ? 'SKU: ' + h(it.sku) + ' · ' : ''}HSN: ${INVOICE.hsn}</div>`}</td>
@@ -79,33 +112,7 @@ function render(o) {
       <td class="r">${rs(it.gross)}</td></tr>`;
   }).join('');
 
-  document.title = `Bill ${o.id} – Toy Kingdom`;
-  document.getElementById('sheet').innerHTML = `
-  ${o.test ? '<div class="watermark">TEST ORDER</div>' : ''}
-  <section class="label">
-    <div class="label-top">
-      <img src="${SELLER.logo}" alt="Toy Kingdom" class="logo">
-      <div class="lbl-order"><div class="k">ORDER</div><div class="v">${h(o.id)}</div><div class="k">${day(o.created)} · ${pieces} item${pieces === 1 ? '' : 's'}</div></div>
-      <div class="pay-box ${cod ? 'cod' : 'prepaid'}">${cod
-        ? `<div class="pk">PARTIAL COD</div><div class="pv">COLLECT ${rs(pay.dueOnDelivery)}</div><div class="pk">in cash</div>`
-        : '<div class="pk">PREPAID</div><div class="pv">DO NOT COLLECT CASH</div>'}</div>
-    </div>
-    <div class="ship-to">
-      <div class="k">SHIP TO</div>
-      <div class="to-name">${h(a.name)}</div>
-      <div class="to-addr">${addrLines.map(h).join('<br>')}</div>
-      <div class="to-pin">PIN ${h(a.pincode)}</div>
-      <div class="to-phone">Mobile: ${h(a.phone)}${a.alt ? ' / ' + h(a.alt) : ''}</div>
-    </div>
-    <div class="label-foot">
-      <div class="from"><span class="k">FROM / RETURN TO:</span> ${h(SELLER.name)}, ${SELLER.address.map(h).join(', ')} · ${h(SELLER.phone)}</div>
-      ${barcode(o.id)}
-      <div class="bc-text">${h(o.id)}</div>
-    </div>
-  </section>
-
-  <div class="cutline"><span>✂ Cut along this line and paste the label on the parcel</span></div>
-
+  return `${o.test ? '<div class="watermark">TEST ORDER</div>' : ''}
   <section class="invoice">
     <div class="inv-head">
       <img src="${SELLER.logo}" alt="Toy Kingdom" class="logo">
@@ -115,7 +122,7 @@ function render(o) {
       <div><div class="k">Sold By :</div><b>${h(SELLER.name)}</b><br>${SELLER.address.map(h).join('<br>')}<br>
         <span class="k">GST Registration No:</span> ${h(SELLER.gstin)}</div>
       <div class="r-al"><div class="k">Billing Address :</div><b>${h(a.name)}</b><br>${addrLines.map(h).join('<br>')}<br>PIN: ${h(a.pincode)}<br>
-        <span class="k">State/UT Code:</span> ${h(a.state)}</div>
+        <span class="k">State/UT:</span> ${h(a.state)}</div>
     </div>
     <div class="inv-parties">
       <div><span class="k">Order Number:</span> ${h(o.id)}<br><span class="k">Order Date:</span> ${day(o.created)}<br>
@@ -141,15 +148,31 @@ function render(o) {
   </section>`;
 }
 
+/* Admin: shipping label + invoice. Customers: invoice only. */
+function render(o, admin) {
+  document.title = `${admin ? 'Label & bill' : 'Bill'} ${o.id} – Toy Kingdom`;
+  const tools = document.getElementById('tools'), out = document.getElementById('out');
+  tools.innerHTML = admin
+    ? `<button id="pLabel">Print shipping label (¼ A4)</button>
+       <button id="pInv" class="ghost">Print invoice (A4)</button>
+       <a href="admin.html" class="ghost">Back to orders</a>
+       <span class="hint">Admin view: customers see only the invoice. Choose “Save as PDF” in the print window to keep a copy.</span>`
+    : `<button id="pInv">Print / download bill</button>
+       <a href="account.html" class="ghost">My orders</a>
+       <span class="hint">Choose “Save as PDF” in the print window to download your bill.</span>`;
+  out.innerHTML = (admin ? `<div class="page-title t-lbl">Shipping label: ¼ of A4 (105 × 148 mm)</div>
+      <section class="sheet label-sheet" id="labelSheet">${labelHTML(o)}</section>
+      <div class="page-title t-inv">Tax invoice (A4)</div>` : '')
+    + `<section class="sheet" id="invoiceSheet">${invoiceHTML(o)}</section>`;
+  const print = mode => { document.body.dataset.print = mode; window.print(); };
+  document.getElementById('pInv').onclick = () => print('invoice');
+  if (admin) document.getElementById('pLabel').onclick = () => print('label');
+}
+
 TK_READY.then(async () => {
   const id = new URLSearchParams(location.search).get('id') || '';
-  const sheet = document.getElementById('sheet');
+  const out = document.getElementById('out');
   if (!Auth.current()) { location.replace('account.html?next=' + encodeURIComponent('invoice.html?id=' + id)); return; }
-  try { render(await Orders.get(id)); }
-  catch (e) { sheet.innerHTML = `<p class="err">Could not load order ${h(id)}: ${h(e.message)}</p>`; return; }
-  const setMode = m => { document.body.dataset.print = m; };
-  document.getElementById('pAll').onclick = () => { setMode('all'); window.print(); };
-  document.getElementById('pLabel').onclick = () => { setMode('label'); window.print(); };
-  document.getElementById('pInv').onclick = () => { setMode('invoice'); window.print(); };
-  window.addEventListener('afterprint', () => setMode('all'));
+  try { render(await Orders.get(id), Auth.isAdmin()); }
+  catch (e) { out.innerHTML = `<p class="sheet err">Could not load order ${h(id)}: ${h(e.message)}</p>`; }
 });

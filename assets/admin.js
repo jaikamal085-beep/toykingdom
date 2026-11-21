@@ -439,7 +439,7 @@ TK_READY.then(function initAdmin() {
           <td>${inr(o.total)}<span class="muted small">${o.items.reduce((n, i) => n + i.qty, 0)} item(s)</span></td>
           <td>${esc(o.payment.method)}${o.payment.dueOnDelivery ? `<span class="muted small">collect ${inr(o.payment.dueOnDelivery)}</span>` : ''}</td>
           <td><select class="select mini-select" data-status="${esc(o.id)}" aria-label="Status of ${esc(o.id)}">${STATUSES.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}</select></td>
-          <td class="right"><a class="link" href="invoice.html?id=${encodeURIComponent(o.id)}" target="_blank" rel="noopener">Print bill</a></td></tr>`).join('')}</tbody></table></div>`
+          <td class="right"><a class="link" href="invoice.html?id=${encodeURIComponent(o.id)}" target="_blank" rel="noopener">Label &amp; bill</a></td></tr>`).join('')}</tbody></table></div>`
         : '<p class="muted small">No orders yet.</p>');
   }
   $('#ordersBox').addEventListener('change', async e => {
