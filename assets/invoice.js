@@ -12,7 +12,7 @@ const SELLER = {
   name: 'Toy Kingdom', gstin: '33BGCPL8590H1Z7', state: 'Tamil Nadu', phone: '+91 82486 40441', email: 'toykingdom1309@gmail.com',
   address: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu - 613006'],
   addressLines: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu'], pin: '613006',
-  logo: 'https://toykingdomonline.com/wp-content/uploads/2025/04/toykingdomlogo.png',
+  logo: 'https://res.cloudinary.com/jk6jvwvb/image/upload/v1795260950/tk-logo.png',   // on Cloudinary so it can be drawn into PDFs
 };
 
 const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -40,9 +40,19 @@ function inWords(amount) {
 
 /* Code 128 (set B) barcode as SVG */
 const C128 = ['212222', '222122', '222221', '121223', '121322', '131222', '122213', '122312', '132212', '221213', '221312', '231212', '112232', '122132', '122231', '113222', '123122', '123221', '223211', '221132', '221231', '213212', '223112', '312131', '311222', '321122', '321221', '312212', '322112', '322211', '212123', '212321', '232121', '111323', '131123', '131321', '112313', '132113', '132311', '211313', '231113', '231311', '112133', '112331', '132131', '113123', '113321', '133121', '313121', '211331', '231131', '213113', '213311', '213131', '311123', '311321', '331121', '312113', '312311', '332111', '314111', '221411', '431111', '111224', '111422', '121124', '121421', '141122', '141221', '112214', '112412', '122114', '122411', '142112', '142211', '241211', '221114', '413111', '241112', '134111', '111242', '121142', '121241', '114212', '124112', '124211', '411212', '421112', '421211', '212141', '214121', '412121', '111143', '111341', '131141', '114113', '114311', '411113', '411311', '113141', '114131', '311141', '411131', '211412', '211214', '211232', '2331112'];
+/* Drawn as a crisp PNG (scales cleanly in print and in the e-mailed PDF); SVG only as a fallback. */
 function barcode(text, height = 46) {
   const codes = [104, ...[...text].map(c => c.charCodeAt(0) - 32)];
   codes.push(codes.reduce((s, c, i) => s + c * (i || 1), 0) % 103, 106);
+  try {
+    const mod = 4, quiet = 10, widths = codes.flatMap(c => [...C128[c]].map(Number));
+    const cv = document.createElement('canvas');
+    cv.width = (widths.reduce((a, b) => a + b, 0) + quiet * 2) * mod; cv.height = 160;
+    const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#000';
+    let x = quiet * mod;
+    widths.forEach((w, i) => { if (i % 2 === 0) g.fillRect(x, 0, w * mod, cv.height); x += w * mod; });
+    return `<img class="barcode" src="${cv.toDataURL('image/png')}" alt="Barcode ${h(text)}">`;
+  } catch (e) { /* no canvas: fall back to SVG below */ }
   let x = 10, bars = '';
   for (const c of codes) [...C128[c]].forEach((w, i) => { w = +w; if (i % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="${height}"/>`; x += w; });
   return `<svg class="barcode" viewBox="0 0 ${x + 10} ${height}" preserveAspectRatio="none" role="img" aria-label="Barcode ${h(text)}">${bars}</svg>`;
@@ -162,18 +172,18 @@ function render(o, admin) {
        <a href="account.html" class="ghost">My orders</a>
        <span class="hint">Choose “Save as PDF” in the print window to download your bill.</span>`;
   out.innerHTML = (admin ? `<div class="page-title t-lbl">Shipping label (full A4 page)</div>
-      <section class="sheet label-sheet" id="labelSheet">${labelHTML(o)}</section>
+      <section class="docsheet label-sheet" id="labelSheet">${labelHTML(o)}</section>
       <div class="page-title t-inv">Tax invoice (A4)</div>` : '')
-    + `<section class="sheet" id="invoiceSheet">${invoiceHTML(o)}</section>`;
+    + `<section class="docsheet" id="invoiceSheet">${invoiceHTML(o)}</section>`;
   const print = mode => { document.body.dataset.print = mode; window.print(); };
   document.getElementById('pInv').onclick = () => print('invoice');
   if (admin) document.getElementById('pLabel').onclick = () => print('label');
 }
 
-TK_READY.then(async () => {
+if (document.body.dataset.page === 'invoice') TK_READY.then(async () => {   // only on invoice.html; order.html uses the functions for e-mail PDFs
   const id = new URLSearchParams(location.search).get('id') || '';
   const out = document.getElementById('out');
   if (!Auth.current()) { location.replace('account.html?next=' + encodeURIComponent('invoice.html?id=' + id)); return; }
   try { render(await Orders.get(id), Auth.isAdmin()); }
-  catch (e) { out.innerHTML = `<p class="sheet err">Could not load order ${h(id)}: ${h(e.message)}</p>`; }
+  catch (e) { out.innerHTML = `<p class="docsheet err">Could not load order ${h(id)}: ${h(e.message)}</p>`; }
 });

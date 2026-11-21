@@ -785,3 +785,9 @@ body.modal-open{overflow:hidden}
   .ocard-actions .btn{flex:1 1 calc(50% - 8px)}
   .acct-head-actions{width:100%}.acct-head-actions .btn{flex:1}
 }
+
+/* order confirmation e-mail status */
+.mail-status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--success);margin:6px 0 0}
+.mail-status:empty{display:none}
+.mail-status .ic{width:16px;height:16px;flex:none}
+.mail-status.bad{color:#9a6700}

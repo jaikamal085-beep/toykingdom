@@ -109,3 +109,16 @@ Run `python -m http.server 8080 --bind 0.0.0.0` from this folder, then open `htt
 (it was http://192.168.0.102:8080). A Windows Firewall rule, "Toy Kingdom site (LAN 8080)", allows this on
 Private networks only. Remove it with: `Remove-NetFirewallRule -DisplayName "Toy Kingdom site (LAN 8080)"`.
 Logging in from another device also needs that IP added under Firebase → Authentication → Settings → Authorized domains.
+
+## Order confirmation e-mails (Google Apps Script)
+
+After an order is placed, the customer's browser builds the bill and label PDFs (`assets/mailer.js`)
+and sends them to a Google Apps Script web app (`email/order-mailer.gs`). The script runs in the store's
+Gmail account and sends:
+- the customer: order confirmation + bill PDF
+- the admin: new-order details + bill PDF + shipping label PDF
+
+The script reads the order from Firestore with the customer's own login token, only writes to the
+order's e-mail and the admin address, ignores orders older than 2 hours, and sends each order once.
+The free Gmail limit is about 100 recipients per day, which is roughly 50 orders a day.
+To switch e-mails on, deploy the script and put its URL in `window.MAIL_ENDPOINT` in `assets/firebase-config.js`.

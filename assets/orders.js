@@ -13,7 +13,8 @@ function initOrder() {
       <nav class="crumbs" aria-label="Breadcrumb"><a href="index.html">Home</a>${icon('right')}<a href="account.html">My account</a>${icon('right')}<span>Order ${esc(o.id)}</span></nav>
       ${fresh ? `<div class="panel order-hero"><span class="ok-ic">${icon('check')}</span>
         <div><h1>Order placed, thank you!</h1><p class="muted">Order number <b>${esc(o.id)}</b> · ${fmtDate(o.created, true)}</p>
-        <p class="small">We'll deliver in ${SHIP.days}. We'll call ${esc(a.phone)} if the courier needs help finding you.</p></div></div>`
+        <p class="small">We'll deliver in ${SHIP.days}. We'll call ${esc(a.phone)} if the courier needs help finding you.</p>
+        <p class="mail-status" id="mailStatus" role="status"></p></div></div>`
         : `<header class="page-head"><h1>Order ${esc(o.id)}</h1><p class="muted">Placed ${fmtDate(o.created, true)} · Status: <b>${esc(o.status)}</b></p></header>`}
       ${o.test ? '<p class="note">This is a <b>test order</b>. Online payment isn’t switched on yet, so no money was taken.</p>' : ''}
       ${o.storage === 'local' ? '<p class="note">Saved on this device only, because the database rules for orders aren’t published yet.</p>' : ''}
@@ -40,6 +41,18 @@ function initOrder() {
           <a class="link center-text" href="collection.html">Continue shopping</a>
         </aside>
       </div></div>`;
+
+    /* order confirmation e-mails (customer: bill; admin: bill + label) */
+    const st = $('#mailStatus');
+    if (fresh && st && typeof Mailer !== 'undefined' && Mailer.enabled() && o.storage === 'cloud') {
+      if (Mailer.alreadySent(o.id)) st.innerHTML = `${icon('mail')} Confirmation e-mail sent to <b>${esc(o.email)}</b>.`;
+      else {
+        st.innerHTML = `${icon('mail')} Sending your confirmation e-mail with the bill to <b>${esc(o.email)}</b>…`;
+        Mailer.sendOrder(o)
+          .then(res => { st.innerHTML = res.ok ? `${icon('check')} Confirmation e-mail with your bill sent to <b>${esc(o.email)}</b>.` : ''; })
+          .catch(err => { st.className = 'mail-status bad'; st.textContent = `We couldn't send the confirmation e-mail (${err.message}). You can still download your bill below.`; });
+      }
+    }
   }).catch(err => {
     main.innerHTML = `<div class="wrap page notfound"><h1>Order not found</h1><p class="muted">${esc(err.message)}</p><a class="btn" href="account.html">My orders</a></div>`;
   });

@@ -1,0 +1,50 @@
+/* Tax invoice + shipping label. Every rule is scoped under .tkdoc so these styles
+   can be loaded on shop pages (for e-mail PDFs) without clashing with styles.css. */
+.tkdoc { --ink:#111; --muted:#555; --line:#222; --soft:#bbb; color:var(--ink); font:12px/1.45 Arial, Helvetica, sans-serif; }
+.tkdoc * { box-sizing:border-box; }
+.tkdoc .docsheet { position:relative; width:210mm; min-height:297mm; padding:10mm; background:#fff; overflow:hidden; }
+.tkdoc .k { color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+.tkdoc .watermark { position:absolute; inset:0; display:grid; place-items:center; font:900 110px Arial; color:rgba(200,0,0,.07); transform:rotate(-28deg); pointer-events:none; z-index:0; }
+
+/* ---- shipping label (admin only): designed at A6 and scaled 2x to fill a full A4 page ---- */
+.tkdoc .label-sheet { width:210mm; height:297mm; min-height:297mm; padding:0; }
+.tkdoc .label { position:relative; width:105mm; height:148.5mm; padding:2.5mm; display:flex; flex-direction:column; gap:1.5mm; overflow:hidden; transform:scale(2); transform-origin:0 0; }
+.tkdoc .label .box { border:1.5px solid var(--line); }
+.tkdoc .lb-head { display:flex; align-items:center; gap:3mm; padding:2mm 2.5mm; }
+.tkdoc .lb-head .logo { height:10mm; width:auto; }
+.tkdoc .lb-head .ord { flex:1; line-height:1.25; }
+.tkdoc .lb-head .ord b { font-size:12.5px; display:block; letter-spacing:.02em; }
+.tkdoc .lb-head .ord span { font-size:9px; color:var(--muted); }
+.tkdoc .pay { padding:1.6mm 2mm; text-align:center; line-height:1.15; }
+.tkdoc .pay.cod { background:#111; color:#fff; }
+.tkdoc .pay .t { font-size:8.5px; font-weight:700; letter-spacing:.08em; }
+.tkdoc .pay .v { font:800 13px Arial; }
+/* receiver and sender: identical blocks, equal height, no empty space */
+.tkdoc .party { flex:1 1 0; min-height:0; padding:2mm 3mm; display:flex; flex-direction:column; justify-content:space-evenly; overflow:hidden; }
+.tkdoc .party .k { font-size:8.5px; }
+.tkdoc .party .nm { font:800 15px Arial; line-height:1.2; }
+.tkdoc .party .ad { font-size:12px; line-height:1.35; }
+.tkdoc .party .pin { font:900 19px Arial; letter-spacing:.05em; line-height:1.1; }
+.tkdoc .party .ph { font:700 12px Arial; }
+.tkdoc .bc { text-align:center; padding-top:1mm; }
+.tkdoc .barcode { width:92%; height:13mm; display:block; margin:0 auto; fill:#000; image-rendering:pixelated; object-fit:fill; }
+.tkdoc .bc-text { font:700 10px monospace; letter-spacing:.2em; }
+
+/* ---- tax invoice ---- */
+.tkdoc .invoice { position:relative; }
+.tkdoc .inv-head { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--soft); padding-bottom:6px; }
+.tkdoc .inv-head .logo { height:42px; width:auto; }
+.tkdoc .inv-title { text-align:right; display:grid; font-size:13px; }
+.tkdoc .inv-title span { font-size:11px; color:var(--muted); }
+.tkdoc .inv-parties { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:8px 0; border-bottom:1px solid var(--soft); }
+.tkdoc .r-al { text-align:right; }
+.tkdoc .inv-table { width:100%; border-collapse:collapse; margin-top:8px; font-size:11px; }
+.tkdoc .inv-table th, .tkdoc .inv-table td { border:1px solid var(--line); padding:4px 5px; vertical-align:top; }
+.tkdoc .inv-table th { background:#eee; font-size:10.5px; }
+.tkdoc .inv-table .c { text-align:center; }
+.tkdoc .inv-table .r { text-align:right; white-space:nowrap; }
+.tkdoc .inv-table .sub { color:var(--muted); font-size:10px; }
+.tkdoc .inv-pay { display:flex; justify-content:space-between; gap:14px; margin-top:8px; align-items:flex-end; }
+.tkdoc .sign { text-align:right; }
+.tkdoc .sign-space { height:28px; }
+.tkdoc .fine { color:var(--muted); font-size:10px; margin-top:8px; }
