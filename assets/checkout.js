@@ -203,14 +203,23 @@ function initCheckout() {
             <button class="btn btn-outline btn-sm" type="button" id="changeAddr">Change</button>
           </div>
           <h2 class="mt">Payment method</h2>
-          <div class="pay-opts" role="radiogroup" aria-label="Payment method">
-            <label class="pay-opt"><input type="radio" name="pay" value="online" checked>
-              <span><b>Pay full amount online</b><span class="small muted">UPI, cards, net banking and wallets via Razorpay</span></span>
-              <b class="pay-amt">${inr(total)}</b></label>
-            ${codOk ? `<label class="pay-opt"><input type="radio" name="pay" value="cod">
-              <span><b>Partial Cash on Delivery</b>
-                <span class="small muted">Pay ${inr(split.now)} online now, ${inr(split.later)} in cash when it arrives</span></span>
-              <b class="pay-amt">${inr(split.now)}</b></label>` : ''}
+          <div class="pay-card">
+            <div class="pay-card-head">
+              <div><span class="pc-brand">Toy Kingdom</span><span class="pc-sub">Choose how you’d like to pay</span></div>
+              <div class="pc-amt"><span>Order total</span><b>${inr(total)}</b></div>
+            </div>
+            <div class="pay-opts" role="radiogroup" aria-label="Payment method">
+              <label class="pay-opt"><input type="radio" name="pay" value="online" checked>
+                <span class="pay-ic">${icon('card')}</span>
+                <span class="pay-txt"><b>Pay full amount online</b><span class="small muted">UPI, cards, net banking and wallets via Razorpay</span>
+                  <span class="pay-chips"><i>UPI</i><i>Cards</i><i>Netbanking</i><i>Wallets</i></span></span>
+                <b class="pay-amt">${inr(total)}</b><span class="pay-chev">${icon('right')}</span></label>
+              ${codOk ? `<label class="pay-opt"><input type="radio" name="pay" value="cod">
+                <span class="pay-ic">${icon('cash')}</span>
+                <span class="pay-txt"><b>Partial Cash on Delivery</b>
+                  <span class="small muted">Pay ${inr(split.now)} online now, ${inr(split.later)} in cash when it arrives</span></span>
+                <b class="pay-amt">${inr(split.now)}</b><span class="pay-chev">${icon('right')}</span></label>` : ''}
+            </div>
           </div>
           <p class="form-msg" id="payMsg" role="status"></p>
           <button class="btn btn-lg btn-block" type="button" id="placeBtn"></button>

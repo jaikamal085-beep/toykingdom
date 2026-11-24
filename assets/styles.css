@@ -545,7 +545,7 @@ fieldset.field legend{font-size:13px;font-weight:500;padding:0;margin-bottom:6px
 .checkout .cform h2{font-size:18px;margin:0}
 .checkout .cform h2.mt{margin-top:10px}
 .pay-opt{display:flex;align-items:center;gap:12px;padding:14px;border:1.5px solid var(--primary);border-radius:var(--radius-sm);background:var(--primary-50);cursor:pointer}
-.pay-opt > span:nth-of-type(1){display:grid;gap:2px;flex:1}
+.pay-opt > .pay-txt{display:grid;gap:2px;flex:1;min-width:0}
 .pay-opt input{accent-color:var(--primary);width:18px;height:18px}
 .pay-dummy{display:grid;gap:12px}
 .pay-dummy p{margin:0}
@@ -900,3 +900,34 @@ body.modal-open{overflow:hidden}
 }
 /* phones: a little breathing room above the logo */
 @media (max-width:860px){.header-in{padding-top:10px}}
+
+/* ===== Payment method card (Razorpay-style) – PC only; phones keep the simple list ===== */
+@media (max-width:860px){.pay-card-head,.pay-ic,.pay-chips,.pay-chev{display:none}}
+@media (min-width:861px){
+  .pay-card{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface);box-shadow:0 12px 32px rgba(70,15,110,.10)}
+  .pay-card-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 22px;color:#fff;background:linear-gradient(135deg,var(--primary) 0%,#6d0aa0 100%)}
+  .pc-brand{display:block;font:700 18px/1.2 var(--head)}
+  .pc-sub{display:block;font-size:13px;opacity:.85;margin-top:2px}
+  .pc-amt{text-align:right}
+  .pc-amt span{display:block;font-size:12px;opacity:.85}
+  .pc-amt b{font:700 24px/1.1 var(--head)}
+  .pay-card .pay-opts{gap:0}
+  .pay-card .pay-opt{position:relative;gap:16px;padding:18px 22px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:var(--surface);transition:background .2s}
+  .pay-card .pay-opt:last-child{border-bottom:0}
+  .pay-card .pay-opt:hover{background:#fbf6fe}
+  .pay-card .pay-opt.on{background:var(--primary-50)}
+  .pay-card .pay-opt.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--primary)}
+  .pay-card .pay-opt input{position:absolute;opacity:0;pointer-events:none}
+  .pay-card .pay-opt:focus-within{outline:2px solid var(--primary);outline-offset:-2px}
+  .pay-ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--primary-50);color:var(--primary);transition:background .2s,color .2s}
+  .pay-ic .ic{width:24px;height:24px}
+  .pay-opt.on .pay-ic{background:var(--primary);color:#fff}
+  .pay-txt b{font-size:15px}
+  .pay-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .pay-chips i{font-style:normal;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:#fff;border:1px solid var(--line);color:var(--muted)}
+  .pay-card .pay-amt{font-size:17px;color:var(--text)}
+  .pay-opt.on .pay-amt{color:var(--primary)}
+  .pay-chev{display:grid;color:var(--muted)}
+  .pay-chev .ic{width:18px;height:18px}
+  .pay-opt.on .pay-chev{color:var(--primary)}
+}
