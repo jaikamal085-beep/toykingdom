@@ -120,7 +120,7 @@ const fmtDate = (t, withTime = false) => new Date(t).toLocaleString('en-IN', wit
    codMin:     partial cash-on-delivery is offered from this items total (shown only at checkout)
    codAdvance: fixed amount paid online in advance with partial COD; the rest is paid in cash
    giftWrap:   gift wrapping charge per wrapped item */
-const SHIP = { days: '3-5 Working Days', freeAbove: 499, fee: 50, codMin: 799, codAdvance: 99, giftWrap: 30 };
+const SHIP = { days: '3-5 Working Days', freeAbove: 499, fee: 50, codMin: 999, codAdvance: 99, giftWrap: 30 };
 const shippingFor = subtotal => subtotal >= SHIP.freeAbove ? 0 : SHIP.fee;
 const codSplit = total => { const now = Math.min(SHIP.codAdvance, total); return { now, later: total - now }; };
 

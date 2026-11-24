@@ -114,7 +114,7 @@ function doPost(e) {
    ===================================================================== */
 const PAY = {
   keyId: 'rzp_test_U45clzycX4Yiar',             // public Key ID (rzp_test_... = test mode, rzp_live_... = real money)
-  freeAbove: 499, fee: 50, codMin: 799, codAdvance: 99, giftWrap: 30,
+  freeAbove: 499, fee: 50, codMin: 999, codAdvance: 99, giftWrap: 30,
   maxLines: 8,
 };
 

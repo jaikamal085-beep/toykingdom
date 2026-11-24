@@ -52,7 +52,7 @@ service cloud.firestore {
     }
 
     // Prices, shipping (Rs 50 below Rs 499), gift wrap (Rs 30 per item) and the
-    // partial-COD advance (Rs 99, orders of Rs 799+) are recalculated here, so an
+    // partial-COD advance (Rs 99, orders of Rs 999+) are recalculated here, so an
     // order with edited prices, negative quantities or a fake amount is refused.
     function orderOk(id, o) {
       let items = o.items;
@@ -80,7 +80,7 @@ service cloud.firestore {
         && (
              (p.mode == 'online' && p.method == 'Online' && p.paidNow == total
                && p.dueOnDelivery == 0 && p.status == 'paid (test)')
-          || (p.mode == 'cod' && p.method == 'Partial COD' && sub >= 799 && p.paidNow == 99
+          || (p.mode == 'cod' && p.method == 'Partial COD' && sub >= 999 && p.paidNow == 99
                && p.dueOnDelivery == total - 99 && p.status == 'advance paid (test)')
         )
         && addressOk(o.address);
