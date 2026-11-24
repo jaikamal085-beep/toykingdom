@@ -13,11 +13,11 @@ const SITE = {
   refund: 'refund-policy.html', account: 'https://toykingdomonline.com/my-account/',
 };
 const CATEGORIES = [
-  { name: 'Educational Toys', img: IMG_BASE + '2025/04/Isolation_Mode.png' },
-  { name: 'Fun Toys',         img: IMG_BASE + '2025/04/Isolation_Mode3.png' },
-  { name: 'RC Toys',          img: IMG_BASE + '2025/04/Isolation_Mode1.png' },
-  { name: 'Gadgets',          img: IMG_BASE + '2025/04/Isolation_Mode2.png' },
-  { name: 'Hotwheels',        img: IMG_BASE + '2026/01/Group-92.png' },
+  { name: 'Educational Toys', img: 'assets/img/cat-educational.png' },
+  { name: 'Fun Toys',         img: 'assets/img/cat-fun.png' },
+  { name: 'RC Toys',          img: 'assets/img/cat-rc.png' },
+  { name: 'Gadgets',          img: 'assets/img/cat-gadgets.png' },
+  { name: 'Hotwheels',        img: 'assets/img/cat-hotwheels.png' },
 ];
 const TOYS_AND_GAMES = ['Educational Toys', 'Fun Toys', 'RC Toys', 'Gadgets'];
 

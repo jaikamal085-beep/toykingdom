@@ -207,12 +207,10 @@ function initCheckout() {
             <label class="pay-opt"><input type="radio" name="pay" value="online" checked>
               <span><b>Pay full amount online</b><span class="small muted">UPI, cards, net banking and wallets via Razorpay</span></span>
               <b class="pay-amt">${inr(total)}</b></label>
-            <label class="pay-opt ${codOk ? '' : 'off'}"><input type="radio" name="pay" value="cod" ${codOk ? '' : 'disabled'}>
+            ${codOk ? `<label class="pay-opt"><input type="radio" name="pay" value="cod">
               <span><b>Partial Cash on Delivery</b>
-                <span class="small muted">${codOk
-                  ? `Pay ${inr(split.now)} online now, ${inr(split.later)} in cash when it arrives`
-                  : `Available on orders of ${inr(SHIP.codMin)} and above. Add ${inr(SHIP.codMin - subtotal)} more to use it.`}</span></span>
-              ${codOk ? `<b class="pay-amt">${inr(split.now)}</b>` : ''}</label>
+                <span class="small muted">Pay ${inr(split.now)} online now, ${inr(split.later)} in cash when it arrives</span></span>
+              <b class="pay-amt">${inr(split.now)}</b></label>` : ''}
           </div>
           <p class="form-msg" id="payMsg" role="status"></p>
           <button class="btn btn-lg btn-block" type="button" id="placeBtn"></button>
