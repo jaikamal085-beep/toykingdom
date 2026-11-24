@@ -51,24 +51,10 @@ Log in at `account.html`. The admin page is `admin.html`.
 2. **Build → Authentication → Sign-in method**: enable **Email/Password**.
    Create the admin user `toykingdom1309@gmail.com` with a password of 6+ characters.
 3. **Build → Firestore Database → Create database** (production mode).
-4. Security rules in use (the admin must have a verified email):
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /products/{id} {
-      allow read: if true;
-      allow create, update, delete: if request.auth != null
-        && request.auth.token.email == 'toykingdom1309@gmail.com'
-        && request.auth.token.email_verified == true;
-    }
-    match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-    }
-  }
-}
-```
+4. Security rules: the full, current rules are in **`firestore.rules`** in this folder.
+   Copy that file into Firebase console > Firestore Database > Rules and click **Publish**.
+   They check every order against the real product prices, stock, quantities, shipping,
+   gift wrap and payment amounts, and only the verified admin email can change products.
 
 5. **Project settings → Your apps → Web app**: copy the `firebaseConfig` and send it to me.
    I'll replace the `localStorage` code in `assets/store.js` with Firebase calls.

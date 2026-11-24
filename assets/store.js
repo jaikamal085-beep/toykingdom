@@ -41,7 +41,7 @@ async function fsCommit(docs, onProgress) {
 const readLS = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (e) { return d; } };
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
 const normEmail = e => String(e || '').trim().toLowerCase();
-const cleanName = s => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+const cleanName = s => String(s || '').replace(/[<>"`{}\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);   // no HTML/script characters in names
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
@@ -152,7 +152,7 @@ const AUTH_ERRORS = {
   'auth/user-not-found': 'Incorrect email or password.',
   'auth/invalid-email': 'Please enter a valid email address.',
   'auth/email-already-in-use': 'An account with this email already exists. Please log in.',
-  'auth/weak-password': 'Password must be at least 6 characters.',
+  'auth/weak-password': 'Password must be at least 8 characters.',
   'auth/too-many-requests': 'Too many attempts. Please wait a few minutes and try again.',
   'auth/network-request-failed': 'Network error. Check your internet connection and try again.',
   'auth/user-disabled': 'This account has been disabled.',
@@ -193,10 +193,10 @@ const Auth = {
   },
 
   async register(name, email, password) {
-    name = String(name || '').trim(); email = normEmail(email);
-    if (!name) throw new Error('Please enter your name.');
+    name = cleanName(name); email = normEmail(email);
+    if (name.length < 2) throw new Error('Please enter your name.');
     if (!EMAIL_RE.test(email)) throw new Error('Please enter a valid email address.');
-    if (String(password).length < 6) throw new Error('Password must be at least 6 characters.');
+    if (String(password).length < 8) throw new Error('Password must be at least 8 characters.');
     needFb();
     try {
       const cred = await fb.createUserWithEmailAndPassword(fbAuth, email, password);
@@ -424,15 +424,16 @@ const Orders = {
     const r = [...crypto.getRandomValues(new Uint8Array(5))].map(b => A[b % 32]).join('');
     return `TK-${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}-${r}`;
   },
+  /* The database rules re-check every order (real products, current prices, stock,
+     quantities 1-99, shipping, gift wrap and payment amounts) and refuse anything else. */
   async create(order) {
     try {
       await fsRequest('PATCH', `/orders/${encodeURIComponent(order.id)}?currentDocument.exists=false`, { fields: fsEncode(order).mapValue.fields });
       return { ...order, storage: 'cloud' };
     } catch (e) {
-      if (e.status !== 403 && e.status !== 404) throw e;
-      const saved = { ...order, storage: 'local' };                          // rules not published yet
-      writeLS(LOCAL_ORDERS, [saved, ...localOrders()].slice(0, 50));
-      return saved;
+      if (e.status !== 403) throw e;
+      try { localStorage.removeItem(REMOTE_CACHE); } catch (_) { /* ignore */ }     // reload fresh prices next time
+      throw new Error('We couldn’t confirm this order. A price or stock level may have just changed. Please refresh the page and try again.');
     }
   },
   async get(id) {

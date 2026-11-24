@@ -575,7 +575,7 @@ function initAccount() {
           <div class="field"><label for="rEmail">Email <span class="req">*</span></label><input id="rEmail" name="email" type="email" autocomplete="email" required></div>
           ${pwField('rPass', 'Password', 'new-password')}
           <div class="field"><label for="rPass2">Confirm password <span class="req">*</span></label><input id="rPass2" name="password2" type="password" autocomplete="new-password" required></div>
-          <p class="small muted">At least 6 characters.</p>
+          <p class="small muted">At least 8 characters.</p>
           <p class="form-msg" role="status"></p>
           <button class="btn btn-lg btn-block" type="submit">Create account</button>
           <p class="small muted center-text">Already have an account? <button type="button" class="link" data-tab="login">Log in</button></p>

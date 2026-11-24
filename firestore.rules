@@ -1,0 +1,119 @@
+rules_version = '2';
+// Toy Kingdom – Firestore security rules.
+// Publish in Firebase console > Firestore Database > (database "default") > Rules.
+// These rules are the real protection: the website code can be changed by anyone in
+// their own browser, so every write is checked here.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    // The only admin: this Google/email account, and only once its email is verified.
+    // Nothing a user can type at signup (name, "role" fields, etc.) makes anyone admin.
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.email == 'toykingdom1309@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function str(v, max) { return v is string && v.size() <= max; }
+    function product(id) { return get(/databases/$(database)/documents/products/$(id)).data; }
+
+    // ---------- order checks ----------
+    // One order line: a real, in-stock product at its CURRENT price, 1-99 pieces.
+    function lineOk(l) {
+      return l is map
+        && l.keys().hasOnly(['id', 'name', 'sku', 'price', 'mrp', 'qty', 'img', 'gift'])
+        && l.keys().hasAll(['id', 'name', 'price', 'qty', 'gift'])
+        && str(l.id, 40) && str(l.name, 300)
+        && l.qty is int && l.qty >= 1 && l.qty <= 99
+        && l.gift is bool
+        && product(l.id).get('stock', true) != false
+        && product(l.id).get('deleted', false) != true
+        && l.price == product(l.id).price;
+    }
+    function lineAt(items, i) { return items.size() <= i || lineOk(items[i]); }
+    function amt(items, i)    { return items.size() > i ? items[i].price * items[i].qty : 0; }
+    function wrap(items, i)   { return (items.size() > i && items[i].gift) ? items[i].qty * 30 : 0; }
+
+    function addressOk(a) {
+      return a is map
+        && a.keys().hasOnly(['name', 'phone', 'alt', 'house', 'area', 'landmark', 'city', 'state', 'pincode', 'district', 'verified'])
+        && str(a.name, 60) && a.name.size() >= 2
+        && a.phone is string && a.phone.matches('[6-9][0-9]{9}')
+        && (!('alt' in a) || a.alt == '' || (a.alt is string && a.alt.matches('[6-9][0-9]{9}')))
+        && str(a.house, 80) && a.house.size() >= 1
+        && str(a.area, 120) && a.area.size() >= 3
+        && (!('landmark' in a) || str(a.landmark, 80))
+        && str(a.city, 50) && str(a.state, 60)
+        && a.pincode is string && a.pincode.matches('[1-9][0-9]{5}')
+        && (!('district' in a) || str(a.district, 60))
+        && (!('verified' in a) || a.verified is bool);
+    }
+
+    // Prices, shipping (Rs 50 below Rs 499), gift wrap (Rs 30 per item) and the
+    // partial-COD advance (Rs 99, orders of Rs 799+) are recalculated here, so an
+    // order with edited prices, negative quantities or a fake amount is refused.
+    function orderOk(id, o) {
+      let items = o.items;
+      let sub = amt(items, 0) + amt(items, 1) + amt(items, 2) + amt(items, 3)
+              + amt(items, 4) + amt(items, 5) + amt(items, 6) + amt(items, 7);
+      let gw = wrap(items, 0) + wrap(items, 1) + wrap(items, 2) + wrap(items, 3)
+             + wrap(items, 4) + wrap(items, 5) + wrap(items, 6) + wrap(items, 7);
+      let ship = sub >= 499 ? 0 : 50;
+      let total = sub + gw + ship;
+      let p = o.payment;
+      let now = request.time.toMillis();
+      return o.keys().hasOnly(['id', 'uid', 'email', 'created', 'status', 'test', 'items',
+                               'subtotal', 'giftWrap', 'shipping', 'total', 'payment', 'address'])
+        && o.id == id && id.matches('TK-[0-9]{6}-[A-Z0-9]{5}')
+        && o.uid == request.auth.uid
+        && o.email == request.auth.token.email
+        && o.created is int && o.created > now - 3600000 && o.created < now + 3600000
+        && o.status == 'placed'
+        && o.test == true                       // no real payments yet: every order is a test order
+        && items is list && items.size() >= 1 && items.size() <= 8
+        && lineAt(items, 0) && lineAt(items, 1) && lineAt(items, 2) && lineAt(items, 3)
+        && lineAt(items, 4) && lineAt(items, 5) && lineAt(items, 6) && lineAt(items, 7)
+        && o.subtotal == sub && o.giftWrap == gw && o.shipping == ship && o.total == total
+        && p is map && p.keys().hasOnly(['mode', 'method', 'paidNow', 'dueOnDelivery', 'status'])
+        && (
+             (p.mode == 'online' && p.method == 'Online' && p.paidNow == total
+               && p.dueOnDelivery == 0 && p.status == 'paid (test)')
+          || (p.mode == 'cod' && p.method == 'Partial COD' && sub >= 799 && p.paidNow == 99
+               && p.dueOnDelivery == total - 99 && p.status == 'advance paid (test)')
+        )
+        && addressOk(o.address);
+    }
+
+    // ---------- collections ----------
+    match /products/{id} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin()
+        && (request.method == 'delete'
+            || (request.resource.data.price is number && request.resource.data.price >= 0));
+    }
+
+    match /orders/{id} {
+      allow create: if signedIn() && orderOk(id, request.resource.data);
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      // only the admin changes an order, and only its status
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updated']);
+      allow delete: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['address', 'email', 'updated'])
+        && (!('email' in request.resource.data) || request.resource.data.email == request.auth.token.email);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Everything else (coupons, settings, anything new) is closed until a rule is added.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

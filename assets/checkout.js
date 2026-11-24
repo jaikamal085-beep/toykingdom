@@ -94,6 +94,12 @@ function initCheckout() {
     .filter(l => l.p && l.p.stock && l.q > 0);
   document.title = 'Checkout – Toy Kingdom';
 
+  if (lines.length > 8) {                                                // the database accepts up to 8 different products per order
+    main.innerHTML = `<div class="wrap page notfound"><h1>Too many different products</h1>
+      <p class="muted">One order can have up to 8 different products. Please remove ${lines.length - 8} from your cart and place the rest as a second order.</p>
+      <a class="btn" href="collection.html">Back to shopping</a></div>`;
+    return;
+  }
   if (!lines.length) {
     main.innerHTML = `<div class="wrap page notfound"><h1>Nothing to check out</h1>
       <p class="muted">Your cart is empty, or the item is out of stock.</p><a class="btn" href="collection.html">Browse all products</a></div>`;

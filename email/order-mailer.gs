@@ -10,6 +10,10 @@
  * that belongs to the logged-in customer), uses the e-mail address stored on that
  * order (never one from the request), refuses old orders, and sends each order once.
  *
+ * WhatsApp alert to the shop owner (optional, free via CallMeBot, own number only):
+ *   Project Settings > Script properties > add  CALLMEBOT_APIKEY = <key from CallMeBot>.
+ *   Without that property no WhatsApp message is sent. Run testWhatsApp() to check it.
+ *
  * Gmail limit for free accounts: about 100 recipients per day (= ~50 orders/day,
  * because each order sends 2 e-mails). See SETUP.md for deployment steps.
  */
@@ -24,6 +28,7 @@ const CFG = {
   whatsapp: '918248640441',
   maxOrderAgeMinutes: 120,                      // only e-mail orders placed in the last 2 hours
   maxPdfBytes: 6 * 1024 * 1024,
+  maxOrdersPerHourPerCustomer: 5,               // e-mails for more orders than this per hour are refused
 };
 
 function doGet() {
@@ -48,6 +53,11 @@ function doPost(e) {
     const o = decodeFields(JSON.parse(res.getContentText()).fields);
     if (!o.email || !o.items || !o.address) return reply({ ok: false, error: 'Order data is incomplete.' });
     if (Date.now() - Number(o.created || 0) > CFG.maxOrderAgeMinutes * 60000) return reply({ ok: false, error: 'This order is too old to e-mail.' });
+
+    /* stop one account from using up the daily Gmail quota with many orders */
+    const cache = CacheService.getScriptCache(), rateKey = 'rate_' + o.uid;
+    const sentRecently = Number(cache.get(rateKey) || 0);
+    if (sentRecently >= CFG.maxOrdersPerHourPerCustomer) return reply({ ok: false, error: 'Too many orders from this account in the last hour. Please contact us on WhatsApp.' });
 
     /* 2. send once (lock so two quick requests can't both send) */
     const lock = LockService.getScriptLock();
@@ -78,12 +88,46 @@ function doPost(e) {
         attachments: [invoice, label].filter(Boolean),
       });
       props.setProperty('sent_' + id, String(Date.now()));
+      cache.put(rateKey, String(sentRecently + 1), 3600);
+      try { notifyWhatsApp(o); } catch (waErr) { console.warn('WhatsApp alert failed: ' + waErr); }   // never blocks the e-mails
     } finally { lock.releaseLock(); }
 
     return reply({ ok: true, to: o.email });
   } catch (err) {
     return reply({ ok: false, error: String(err && err.message || err) });
   }
+}
+
+/* ---------- WhatsApp alert to the owner (CallMeBot) ---------- */
+function sendWhatsApp(text) {
+  const key = PropertiesService.getScriptProperties().getProperty('CALLMEBOT_APIKEY');
+  if (!key) return false;                                   // not set up: skip silently
+  const url = 'https://api.callmebot.com/whatsapp.php?phone=' + encodeURIComponent('+' + CFG.whatsapp) +
+    '&text=' + encodeURIComponent(text) + '&apikey=' + encodeURIComponent(key);
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('CallMeBot ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  return true;
+}
+
+function notifyWhatsApp(o) {
+  const a = o.address || {}, p = o.payment || {};
+  const items = (o.items || []).map(function (i) { return '• ' + i.name + ' × ' + i.qty + (i.gift ? ' 🎁' : ''); }).join('\n');
+  const pay = p.mode === 'cod'
+    ? 'Partial COD – paid ' + rs(p.paidNow) + ', *collect ' + rs(p.dueOnDelivery) + ' in cash*'
+    : 'Prepaid ' + rs(p.paidNow) + ' – do not collect cash';
+  sendWhatsApp([
+    (o.test ? '[TEST] ' : '') + '🛒 *New order ' + o.id + '* – ' + rs(o.total),
+    items,
+    (o.giftWrap ? 'Gift wrap: ' + rs(o.giftWrap) + '\n' : '') + pay,
+    '📦 ' + a.name + ', ' + a.city + ' ' + a.pincode + ' · ' + a.phone,
+    CFG.siteUrl + 'admin.html',
+  ].join('\n\n'));
+}
+
+/* Run this once from the editor (select testWhatsApp > Run) to check the WhatsApp alert. */
+function testWhatsApp() {
+  const ok = sendWhatsApp('✅ Toy Kingdom: WhatsApp order alerts are working.');
+  Logger.log(ok ? 'Sent. Check WhatsApp.' : 'CALLMEBOT_APIKEY is not set in Script properties.');
 }
 
 /* ---------- helpers ---------- */
