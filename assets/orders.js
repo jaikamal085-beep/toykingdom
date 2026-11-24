@@ -16,7 +16,7 @@ function initOrder() {
         <p class="small">We'll deliver in ${SHIP.days}. We'll call ${esc(a.phone)} if the courier needs help finding you.</p>
         <p class="mail-status" id="mailStatus" role="status"></p></div></div>`
         : `<header class="page-head"><h1>Order ${esc(o.id)}</h1><p class="muted">Placed ${fmtDate(o.created, true)} · Status: <b>${esc(o.status)}</b></p></header>`}
-      ${o.test ? '<p class="note">This is a <b>test order</b>. Online payment isn’t switched on yet, so no money was taken.</p>' : ''}
+      ${o.test ? `<p class="note">This is a <b>test order</b>${o.payment && o.payment.razorpayPaymentId ? ' paid in Razorpay test mode' : ''}, so no real money was taken.</p>` : ''}
       ${o.storage === 'local' ? '<p class="note">Saved on this device only, because the database rules for orders aren’t published yet.</p>' : ''}
       <div class="order-grid">
         <section class="panel">

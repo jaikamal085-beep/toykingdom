@@ -81,6 +81,54 @@ function phoneProblem(v, label = 'mobile number') {
 const letters = s => (String(s).match(/[a-z]/gi) || []).length;
 const cleanSpaces = s => String(s || '').replace(/\s+/g, ' ').trim();
 
+/* ---------- Razorpay (server: Apps Script at window.MAIL_ENDPOINT) ---------- */
+const Pay = {
+  async call(action, data) {
+    if (!window.MAIL_ENDPOINT) throw new Error('Online payment is not set up yet.');
+    const idToken = await Auth.token();
+    let r;
+    try { r = await fetch(window.MAIL_ENDPOINT, { method: 'POST', body: JSON.stringify({ action, idToken, ...data }) }); }
+    catch (e) { throw new Error('No connection to the payment server. Please check your internet and try again.'); }
+    let d = null; try { d = await r.json(); } catch (e) { /* not JSON */ }
+    if (!d || !d.ok) throw new Error((d && d.error) || 'The payment server did not answer. Please try again.');
+    return d;
+  },
+  sdk() {
+    if (window.Razorpay) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      s.onload = res; s.onerror = () => rej(new Error('The payment window could not load. Please check your internet and try again.'));
+      document.head.append(s);
+    });
+  },
+  /* resolves with the order number once paid and verified, or null if the window was closed */
+  async checkout({ mode, address, me, items, onVerifying }) {
+    const [, start] = await Promise.all([this.sdk(), this.call('createPayment', { mode, address, items })]);
+    return new Promise((resolve, reject) => {
+      let paid = false;
+      const rzp = new window.Razorpay({
+        key: start.keyId, order_id: start.rzpOrderId, amount: start.amount, currency: start.currency,
+        name: 'Toy Kingdom', description: `Order ${start.orderId}`,
+        image: new URL('assets/img/favicon.png', location.href).href,
+        prefill: { name: address.name, email: me.email, contact: '+91' + address.phone },
+        notes: { orderId: start.orderId },
+        theme: { color: '#9D10DB' },
+        modal: { confirm_close: true, ondismiss: () => { if (!paid) resolve(null); } },
+        handler: async resp => {
+          paid = true;
+          if (onVerifying) onVerifying();
+          try {
+            const done = await this.call('confirmPayment', { rzpOrderId: resp.razorpay_order_id, paymentId: resp.razorpay_payment_id, signature: resp.razorpay_signature });
+            resolve(done.orderId);
+          } catch (e) { e.paymentId = resp.razorpay_payment_id; reject(e); }
+        },
+      });
+      rzp.open();                                    // failed attempts are shown inside the Razorpay window, which lets the customer retry
+    });
+  },
+};
+
 function initCheckout() {
   const main = $('#main'), qs = new URLSearchParams(location.search);
   const me = Auth.current();
@@ -166,10 +214,9 @@ function initCheckout() {
                   : `Available on orders of ${inr(SHIP.codMin)} and above. Add ${inr(SHIP.codMin - subtotal)} more to use it.`}</span></span>
               ${codOk ? `<b class="pay-amt">${inr(split.now)}</b>` : ''}</label>
           </div>
-          <p class="small muted">Test mode: no real payment is taken yet.</p>
           <p class="form-msg" id="payMsg" role="status"></p>
           <button class="btn btn-lg btn-block" type="button" id="placeBtn"></button>
-          <p class="small muted center-text secure-line">${icon('lock')} Payments will be processed securely by Razorpay.</p>
+          <p class="small muted center-text secure-line">${icon('lock')} Secure payment by Razorpay: UPI, cards, net banking and wallets.</p>
           <p class="small muted center-text">By placing an order you agree to our <a class="link" href="${SITE.refund}">Returns &amp; Refund Policy</a>.</p>
         </section>
       </div>
@@ -438,37 +485,38 @@ function initCheckout() {
     mode = (payStep.querySelector('input[name=pay]:checked') || {}).value || 'online';
     $$('.pay-opt', payStep).forEach(l => l.classList.toggle('on', $('input', l).checked));
     $('#codSplit').hidden = mode !== 'cod';
-    $('#placeBtn').innerHTML = `${icon('lock')} Place order · pay ${inr(mode === 'cod' ? split.now : total)} (test)`;
+    $('#placeBtn').innerHTML = `${icon('lock')} Pay ${inr(mode === 'cod' ? split.now : total)} &amp; place order`;
   }
   payStep.addEventListener('change', e => { if (e.target.name === 'pay') syncMode(); });
   syncMode();
 
-  /* ---------- place the (test) order ---------- */
+  /* ---------- pay with Razorpay and place the order ----------
+     The server (Apps Script) prices the cart from the database, opens a Razorpay order,
+     and after payment checks Razorpay's signature before saving the order. */
   $('#placeBtn').onclick = async () => {
     const btn = $('#placeBtn'), pmsg = $('#payMsg');
     if (!reviewing) { showStep('address', false); return; }
     if (mode === 'cod' && !codOk) { pmsg.className = 'form-msg bad'; pmsg.textContent = `Partial COD is available on orders of ${inr(SHIP.codMin)} and above.`; return; }
+    pmsg.className = 'form-msg'; pmsg.textContent = '';
     btn.disabled = true; $('#changeAddr').disabled = true;
-    btn.textContent = 'Processing test payment…';
+    btn.textContent = 'Opening secure payment…';
+    const unlock = () => { btn.disabled = false; $('#changeAddr').disabled = false; syncMode(); };
     try {
-      await new Promise(r => setTimeout(r, 900));                          // stands in for Razorpay Checkout
-      const order = {
-        id: Orders.newId(), uid: me.uid, email: me.email, created: Date.now(), status: 'placed', test: true,
-        items: lines.map(({ p, q, gift }) => ({ id: String(p.id), name: p.name, sku: p.sku || '', price: p.price, mrp: p.mrp || p.price, qty: q, img: p.imgs[0] || '', gift: !!gift })),
-        subtotal, giftWrap, shipping, total,
-        payment: mode === 'cod'
-          ? { mode: 'cod', method: 'Partial COD', paidNow: split.now, dueOnDelivery: split.later, status: 'advance paid (test)' }
-          : { mode: 'online', method: 'Online', paidNow: total, dueOnDelivery: 0, status: 'paid (test)' },
-        address: reviewing,
-      };
-      const saved = await Orders.create(order);
+      const orderId = await Pay.checkout({
+        mode, address: reviewing, me,
+        items: lines.map(({ p, q, gift }) => ({ id: String(p.id), qty: q, gift: !!gift })),
+        onVerifying: () => { btn.textContent = 'Confirming your payment…'; },
+      });
+      if (!orderId) { unlock(); return; }                                 // customer closed the payment window
       await Profile.saveAddress(reviewing);
       if (!buyId) { cart = {}; saveCart(); gifts = {}; saveGifts(); renderCart(); }
       showStep('done', false);
-      location.href = `order.html?id=${encodeURIComponent(saved.id)}&new=1`;
+      location.href = `order.html?id=${encodeURIComponent(orderId)}&new=1`;
     } catch (err) {
-      pmsg.className = 'form-msg bad'; pmsg.textContent = err.message || 'Could not place the order.';
-      btn.disabled = false; $('#changeAddr').disabled = false; syncMode();
+      pmsg.className = 'form-msg bad';
+      pmsg.innerHTML = esc(err.message || 'Could not place the order.')
+        + (err.paymentId ? ` <a class="link" href="${waLink(`Hi Toy Kingdom! My payment ${err.paymentId} went through but the order didn't show.`)}" target="_blank" rel="noopener">Message us on WhatsApp</a>` : '');
+      unlock();
     }
   };
 

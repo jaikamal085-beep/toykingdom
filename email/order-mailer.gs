@@ -1,5 +1,5 @@
 /**
- * Toy Kingdom – order confirmation e-mails (Google Apps Script web app)
+ * Toy Kingdom – order server: Razorpay payments + order e-mails (Google Apps Script web app)
  *
  * Sends from the Google account that deploys this script (toykingdom1309@gmail.com):
  *   - customer: "Order confirmed" + bill PDF
@@ -38,6 +38,8 @@ function doGet() {
 function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (body.action === 'createPayment') return reply(createPayment_(body));
+    if (body.action === 'confirmPayment') return reply(confirmPayment_(body));
     const id = String(body.orderId || '');
     if (!/^TK-\d{6}-[A-Z0-9]{5}$/.test(id)) return reply({ ok: false, error: 'Invalid order number.' });
     if (!body.idToken) return reply({ ok: false, error: 'Please log in again.' });
@@ -96,6 +98,226 @@ function doPost(e) {
   } catch (err) {
     return reply({ ok: false, error: String(err && err.message || err) });
   }
+}
+
+/* =====================================================================
+   Razorpay payments (the server side: the browser is never trusted)
+   Script properties needed (Project Settings > Script properties):
+     RAZORPAY_KEY_SECRET       = Key Secret from Razorpay (test or live)
+     FIREBASE_SERVICE_ACCOUNT  = the whole service-account JSON file from Firebase
+   Flow:
+     1. createPayment: checks the login, prices the cart from the database,
+        creates a Razorpay order for the amount to pay now.
+     2. Razorpay Checkout runs in the customer's browser.
+     3. confirmPayment: checks Razorpay's signature, re-reads the payment from
+        Razorpay (amount, order, captured), then saves the order as paid.
+   ===================================================================== */
+const PAY = {
+  keyId: 'rzp_test_U45clzycX4Yiar',             // public Key ID (rzp_test_... = test mode, rzp_live_... = real money)
+  freeAbove: 499, fee: 50, codMin: 799, codAdvance: 99, giftWrap: 30,
+  maxLines: 8,
+};
+
+function secret_(name) {
+  const v = PropertiesService.getScriptProperties().getProperty(name);
+  if (!v) throw new Error('Payments are not fully set up yet (' + name + ' is missing).');
+  return v;
+}
+
+/* the customer's Firebase login, checked by Google */
+function verifyUser_(idToken) {
+  if (!idToken) throw new Error('Please log in again.');
+  const r = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + CFG.apiKey, {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify({ idToken: idToken }), muteHttpExceptions: true,
+  });
+  const u = r.getResponseCode() === 200 ? (JSON.parse(r.getContentText()).users || [])[0] : null;
+  if (!u || !u.email) throw new Error('Your login has expired. Please log in again.');
+  return { uid: u.localId, email: String(u.email).toLowerCase() };
+}
+
+function fsBase_() {
+  return 'https://firestore.googleapis.com/v1/projects/' + CFG.projectId + '/databases/' + CFG.database + '/documents';
+}
+function getProduct_(id) {
+  const r = UrlFetchApp.fetch(fsBase_() + '/products/' + encodeURIComponent(id) + '?key=' + CFG.apiKey, { muteHttpExceptions: true });
+  return r.getResponseCode() === 200 ? decodeFields(JSON.parse(r.getContentText()).fields) : null;
+}
+
+function cleanStr_(v, max) { return String(v == null ? '' : v).replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max); }
+function checkAddress_(a) {
+  a = a || {};
+  const o = {
+    name: cleanStr_(a.name, 60), phone: String(a.phone || '').replace(/\D/g, ''), alt: String(a.alt || '').replace(/\D/g, ''),
+    house: cleanStr_(a.house, 80), area: cleanStr_(a.area, 120), landmark: cleanStr_(a.landmark, 80),
+    city: cleanStr_(a.city, 50), state: cleanStr_(a.state, 60), pincode: String(a.pincode || '').replace(/\D/g, ''),
+    district: cleanStr_(a.district, 60), verified: a.verified === true,
+  };
+  if (o.name.length < 2 || !/^[6-9]\d{9}$/.test(o.phone) || (o.alt && !/^[6-9]\d{9}$/.test(o.alt)) || !o.house ||
+      o.area.length < 3 || !o.city || !o.state || !/^[1-9]\d{5}$/.test(o.pincode)) throw new Error('Please check the delivery address.');
+  return o;
+}
+
+function newOrderId_() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Date.now());
+  let r = '';
+  for (let i = 0; i < 5; i++) r += A[(bytes[i] + 256) % 32];
+  return 'TK-' + Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyMMdd') + '-' + r;
+}
+
+/* the order, priced only from the database */
+function buildOrder_(user, body) {
+  const cart = Array.isArray(body.items) ? body.items : [];
+  if (!cart.length || cart.length > PAY.maxLines) throw new Error('An order can have 1 to ' + PAY.maxLines + ' different products.');
+  const seen = {}, items = [];
+  cart.forEach(function (c) {
+    const id = String(c && c.id || ''), qty = Number(c && c.qty);
+    if (!id || seen[id]) throw new Error('Your cart has a problem. Please refresh the page and try again.');
+    seen[id] = true;
+    if (!(qty >= 1 && qty <= 99 && Math.floor(qty) === qty)) throw new Error('Each quantity must be between 1 and 99.');
+    const p = getProduct_(id);
+    if (!p || p.deleted || p.stock === false) throw new Error('Sorry, ' + (p && p.name ? '"' + p.name + '"' : 'a product in your cart') + ' is no longer available.');
+    items.push({ id: id, name: String(p.name || ''), sku: String(p.sku || ''), price: Number(p.price), mrp: Number(p.mrp || p.price),
+      qty: qty, img: String((p.imgs && p.imgs[0]) || ''), gift: c.gift === true });
+  });
+  const subtotal = items.reduce(function (s, i) { return s + i.price * i.qty; }, 0);
+  const giftWrap = items.reduce(function (s, i) { return s + (i.gift ? PAY.giftWrap * i.qty : 0); }, 0);
+  const shipping = subtotal >= PAY.freeAbove ? 0 : PAY.fee;
+  const total = subtotal + giftWrap + shipping;
+  const mode = body.mode === 'cod' ? 'cod' : 'online';
+  if (mode === 'cod' && subtotal < PAY.codMin) throw new Error('Partial COD is available on orders of ' + rs(PAY.codMin) + ' and above.');
+  const paidNow = mode === 'cod' ? Math.min(PAY.codAdvance, total) : total;
+  return {
+    id: newOrderId_(), uid: user.uid, email: user.email, created: Date.now(), status: 'placed',
+    test: PAY.keyId.indexOf('rzp_test_') === 0,
+    items: items, subtotal: subtotal, giftWrap: giftWrap, shipping: shipping, total: total,
+    payment: { mode: mode, method: mode === 'cod' ? 'Partial COD' : 'Online', paidNow: paidNow, dueOnDelivery: total - paidNow, status: 'pending' },
+    address: checkAddress_(body.address),
+  };
+}
+
+function razorpay_(method, path, payload) {
+  const opts = { method: method, headers: { Authorization: 'Basic ' + Utilities.base64Encode(PAY.keyId + ':' + secret_('RAZORPAY_KEY_SECRET')) }, muteHttpExceptions: true };
+  if (payload) { opts.contentType = 'application/json'; opts.payload = JSON.stringify(payload); }
+  const r = UrlFetchApp.fetch('https://api.razorpay.com/v1' + path, opts);
+  let d = {}; try { d = JSON.parse(r.getContentText() || '{}'); } catch (e) { /* not JSON */ }
+  if (r.getResponseCode() >= 300) throw new Error('Payment service: ' + ((d.error && d.error.description) || ('error ' + r.getResponseCode())));
+  return d;
+}
+
+function createPayment_(body) {
+  const user = verifyUser_(body.idToken);
+  const o = buildOrder_(user, body);
+  const rz = razorpay_('post', '/orders', { amount: o.payment.paidNow * 100, currency: 'INR', receipt: o.id, notes: { orderId: o.id, uid: user.uid } });
+  o.payment.razorpayOrderId = rz.id;
+  CacheService.getScriptCache().put('rzp_' + rz.id, JSON.stringify(o), 21600);     // kept 6 hours for the confirmation
+  return { ok: true, keyId: PAY.keyId, rzpOrderId: rz.id, amount: rz.amount, currency: 'INR', orderId: o.id, test: o.test };
+}
+
+function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
+
+function confirmPayment_(body) {
+  const user = verifyUser_(body.idToken);
+  const rzpOrderId = String(body.rzpOrderId || ''), paymentId = String(body.paymentId || ''), sig = String(body.signature || '');
+  const props = PropertiesService.getScriptProperties();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const done = props.getProperty('paid_' + rzpOrderId);
+    if (done) return { ok: true, orderId: done, already: true };              // confirmed before (double click / retry)
+    const raw = CacheService.getScriptCache().get('rzp_' + rzpOrderId);
+    if (!raw) throw new Error('This payment session has expired. If money was taken, WhatsApp us with payment ID ' + paymentId + '.');
+    const o = JSON.parse(raw);
+    if (o.uid !== user.uid) throw new Error('This payment belongs to a different account.');
+
+    /* 1. Razorpay's signature proves the payment details came from Razorpay */
+    const expected = hex_(Utilities.computeHmacSha256Signature(rzpOrderId + '|' + paymentId, secret_('RAZORPAY_KEY_SECRET')));
+    if (expected !== sig) throw new Error('The payment could not be verified.');
+    /* 2. ask Razorpay directly: right order, right amount, money captured */
+    let pay = razorpay_('get', '/payments/' + encodeURIComponent(paymentId));
+    if (pay.order_id !== rzpOrderId || Number(pay.amount) !== o.payment.paidNow * 100) throw new Error('The payment details do not match this order.');
+    if (pay.status === 'authorized') pay = razorpay_('post', '/payments/' + encodeURIComponent(paymentId) + '/capture', { amount: pay.amount, currency: 'INR' });
+    if (pay.status !== 'captured') throw new Error('The payment is not complete yet (' + pay.status + ').');
+
+    /* 3. save the paid order (server login, so customers can't create paid orders themselves) */
+    o.created = Date.now();
+    const hasServerKey = !!PropertiesService.getScriptProperties().getProperty('FIREBASE_SERVICE_ACCOUNT');
+    if (hasServerKey) {
+      o.payment.status = o.payment.mode === 'cod' ? 'advance paid' : 'paid';
+      o.payment.razorpayPaymentId = paymentId;
+      if (pay.method) o.payment.method += ' · ' + String(pay.method).toUpperCase();
+      saveOrderAsServer_(o);
+    } else if (o.test) {
+      /* TEST MODE without the server key: save with the customer's own login, in the exact
+         shape the current database rules accept. Live payments always need the server key. */
+      o.payment.status = o.payment.mode === 'cod' ? 'advance paid (test)' : 'paid (test)';
+      delete o.payment.razorpayOrderId;
+      saveOrderAsCustomer_(o, body.idToken, paymentId);
+    } else {
+      throw new Error('Payments are not fully set up yet (FIREBASE_SERVICE_ACCOUNT is missing). Your payment ' + paymentId + ' will be refunded – please WhatsApp us.');
+    }
+    props.setProperty('paid_' + rzpOrderId, o.id);
+    return { ok: true, orderId: o.id };
+  } finally { lock.releaseLock(); }
+}
+
+/* ---------- writing to Firestore as the server (service account) ---------- */
+function encodeValue_(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(encodeValue_) } };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Math.floor(v) === v ? { integerValue: String(v) } : { doubleValue: v };
+  if (typeof v === 'object') {
+    const f = {};
+    Object.keys(v).forEach(function (k) { if (v[k] !== undefined) f[k] = encodeValue_(v[k]); });
+    return { mapValue: { fields: f } };
+  }
+  return { stringValue: String(v) };
+}
+
+function serverToken_() {
+  const cache = CacheService.getScriptCache(), cached = cache.get('sa_token');
+  if (cached) return cached;
+  const sa = JSON.parse(secret_('FIREBASE_SERVICE_ACCOUNT'));
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = function (x) { return Utilities.base64EncodeWebSafe(x).replace(/=+$/, ''); };
+  const head = b64(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = b64(JSON.stringify({ iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore',
+    aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const sig = b64(Utilities.computeRsaSha256Signature(head + '.' + claim, sa.private_key));
+  const r = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post', payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: head + '.' + claim + '.' + sig }, muteHttpExceptions: true,
+  });
+  const d = JSON.parse(r.getContentText() || '{}');
+  if (!d.access_token) throw new Error('Server login to the database failed: ' + (d.error_description || d.error || r.getResponseCode()));
+  cache.put('sa_token', d.access_token, 3000);
+  return d.access_token;
+}
+
+function saveOrderAsServer_(o) {
+  const r = UrlFetchApp.fetch(fsBase_() + '/orders/' + encodeURIComponent(o.id) + '?currentDocument.exists=false', {
+    method: 'patch', contentType: 'application/json', headers: { Authorization: 'Bearer ' + serverToken_() },
+    payload: JSON.stringify({ fields: encodeValue_(o).mapValue.fields }), muteHttpExceptions: true,
+  });
+  if (r.getResponseCode() === 200) return;
+  throw new Error('The payment worked but the order could not be saved (' + r.getResponseCode() + '). Please WhatsApp us with payment ID ' + o.payment.razorpayPaymentId + '.');
+}
+
+function saveOrderAsCustomer_(o, idToken, paymentId) {
+  const r = UrlFetchApp.fetch(fsBase_() + '/orders/' + encodeURIComponent(o.id) + '?currentDocument.exists=false&key=' + CFG.apiKey, {
+    method: 'patch', contentType: 'application/json', headers: { Authorization: 'Bearer ' + idToken },
+    payload: JSON.stringify({ fields: encodeValue_(o).mapValue.fields }), muteHttpExceptions: true,
+  });
+  if (r.getResponseCode() === 200) return;
+  throw new Error('The test payment worked but the order could not be saved (' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 200) + '). Payment ID ' + paymentId + '.');
+}
+
+/* Run once from the editor to check the setup (Razorpay key + database login). */
+function testPaymentSetup() {
+  razorpay_('get', '/orders?count=1');
+  Logger.log('Razorpay key: OK (' + (PAY.keyId.indexOf('rzp_test_') === 0 ? 'TEST mode' : 'LIVE mode') + ')');
+  if (PropertiesService.getScriptProperties().getProperty('FIREBASE_SERVICE_ACCOUNT')) { serverToken_(); Logger.log('Database server login: OK'); }
+  else Logger.log('FIREBASE_SERVICE_ACCOUNT not set: test payments save with the customer login; needed before going live.');
 }
 
 /* ---------- WhatsApp alert to the owner (CallMeBot) ---------- */
