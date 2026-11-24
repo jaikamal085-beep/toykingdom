@@ -131,7 +131,7 @@ function initCheckout() {
           <div class="frow">${field('pincode', 'PIN code', 'inputmode="numeric" autocomplete="postal-code" maxlength="6" placeholder="6 digits"')}
             ${field('alt', 'Alternate mobile', 'type="tel" inputmode="numeric" maxlength="14" placeholder="Optional"', false)}</div>
           <p class="pin-status" id="pinStatus" role="status"></p>
-          ${field('house', 'House / flat no., building', 'autocomplete="address-line1" maxlength="80" placeholder="e.g. 12B, Lotus Apartments"')}
+          ${field('house', 'House / flat no., building', 'autocomplete="tk-house" maxlength="80" placeholder="e.g. 12B, Lotus Apartments"')}
           ${field('area', 'Street, area / locality', 'autocomplete="tk-street-area" maxlength="120" placeholder="Start typing: e.g. 2nd Street, Anna Nagar"')}
           ${field('landmark', 'Landmark', 'autocomplete="tk-landmark" maxlength="80" placeholder="e.g. Near Murugan Temple (optional)"', false)}
           <div class="frow">${field('city', 'City / town', 'autocomplete="address-level2" maxlength="50"')}
@@ -318,6 +318,7 @@ function initCheckout() {
     const pick = it => {
       inp.value = it.fill;
       if (it.city && !F('city').value.trim()) F('city').value = it.city;
+      if (it.area && !F('area').value.trim()) F('area').value = it.area;     // building picked: fill its street/area too
       setErr(key, ''); reviewing = null; close();
     };
     /* the PIN's own localities from India Post (shown first, and on focus before typing) */
@@ -334,7 +335,7 @@ function initCheckout() {
         items = key === 'area' && pin ? postOffices('', pin).slice(0, 6) : [];
         active = -1; return render(pin || q.length === 0 ? '' : '');
       }
-      if (!pin) { items = []; active = -1; return render('Enter a valid <b>PIN code</b> above to see streets and areas near you.'); }
+      if (!pin) { items = []; active = -1; return render('Enter a valid <b>PIN code</b> above to see suggestions near you.'); }
       const local = postOffices(q, pin).slice(0, 3);
       const centre = await pinCentre(pin, pinInfo);
       if (my !== seq) return;
@@ -347,7 +348,10 @@ function initCheckout() {
       const near3 = pin.slice(0, 3), known = [pinInfo.district, ...pinInfo.places, ...pinInfo.blocks].map(s => s.toLowerCase());
       const seen = new Set(local.map(x => x.fill.toLowerCase()));
       const remote = feats.filter(f => f.properties.countrycode === 'IN').map(f => {
-        const p = f.properties, main = p.name || p.street;
+        const p = f.properties;
+        const main = key === 'house'
+          ? (p.name || (p.housenumber && p.street ? p.housenumber + ', ' + p.street : ''))
+          : (p.name || p.street);
         if (!main) return null;
         const pc = String(p.postcode || '').replace(/\D/g, '');
         if (pc.length === 6 && pc.slice(0, 3) !== near3) return null;
@@ -358,12 +362,15 @@ function initCheckout() {
         if ([town, area].some(t => t && known.some(k => k.includes(t.toLowerCase()) || t.toLowerCase().includes(k)))) score += 2;
         if (main.toLowerCase().startsWith(q.toLowerCase())) score += 1;
         const sub = [p.street && p.street !== main ? p.street : '', area !== main ? area : '', town, p.postcode].filter(Boolean).join(', ');
-        const fill = key === 'area' ? [main, area && area !== main ? area : ''].filter(Boolean).join(', ') : (near ? 'Near ' : '') + main;
-        return { main, sub, fill, city: p.city || '', score };
+        const fill = key === 'area' ? [main, area && area !== main ? area : ''].filter(Boolean).join(', ')
+          : key === 'house' ? ([p.housenumber, p.name].filter(Boolean).join(', ') || main)
+          : (near ? 'Near ' : '') + main;
+        const areaFill = key === 'house' ? [p.street, area].filter(Boolean).join(', ') : '';
+        return { main, sub, fill, area: areaFill, city: p.city || '', score };
       }).filter(x => x && !seen.has(x.fill.toLowerCase()) && seen.add(x.fill.toLowerCase()))
         .sort((a, b) => b.score - a.score);
       items = [...local, ...remote].slice(0, 7); active = -1;
-      render(items.length ? '' : 'No matches found. Just type your full street / area name.');
+      render(items.length ? '' : key === 'house' ? 'No buildings found. Just type your house / flat number and building name.' : key === 'landmark' ? 'No matches found. Just type a well-known place near you.' : 'No matches found. Just type your full street / area name.');
     }
     inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(query, 300); });
     inp.addEventListener('focus', () => { if (!inp.value.trim() || box.hidden) query(); });
@@ -380,6 +387,7 @@ function initCheckout() {
     document.addEventListener('pointerup', () => setTimeout(() => { pressing = false; }, 400));
     inp.addEventListener('blur', () => setTimeout(() => { if (!pressing) close(); }, 250));
   }
+  attachSuggest('house', ['house']);
   attachSuggest('area', ['street', 'locality', 'district']);
   attachSuggest('landmark', ['house', 'street', 'locality']);
 
