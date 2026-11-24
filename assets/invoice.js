@@ -12,7 +12,7 @@ const SELLER = {
   name: 'Toy Kingdom', gstin: '33BGCPL8590H1Z7', state: 'Tamil Nadu', phone: '+91 82486 40441', email: 'toykingdom1309@gmail.com',
   address: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu - 613006'],
   addressLines: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu'], pin: '613006',
-  logo: 'https://res.cloudinary.com/jk6jvwvb/image/upload/v1795260950/tk-logo.png',   // on Cloudinary so it can be drawn into PDFs
+  logo: 'assets/img/logo.png',   // same site, so it can be drawn into PDFs
 };
 
 const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -103,6 +103,8 @@ function labelHTML(o) {
 function invoiceHTML(o) {
   const a = o.address, pay = o.payment, same = (a.state || '').toLowerCase() === SELLER.state.toLowerCase();
   const items = o.items.map(i => ({ ...i, gross: i.price * i.qty }));
+  const wrapped = o.items.filter(i => i.gift).reduce((n, i) => n + i.qty, 0);
+  if (o.giftWrap) items.push({ name: 'Gift Wrapping', qty: wrapped || 1, price: wrapped ? o.giftWrap / wrapped : o.giftWrap, gross: o.giftWrap, ship: true });
   if (o.shipping) items.push({ name: 'Shipping Charges', qty: 1, price: o.shipping, gross: o.shipping, ship: true });
   const cod = pay.mode === 'cod' && pay.dueOnDelivery > 0;
   const addrLines = addressLines(a);
@@ -113,7 +115,7 @@ function invoiceHTML(o) {
     if (t) totTax += t.tax;
     return `<tr>
       <td class="c">${n + 1}</td>
-      <td>${h(it.name)}${it.ship ? '' : `<div class="sub">${it.sku ? 'SKU: ' + h(it.sku) + ' · ' : ''}HSN: ${INVOICE.hsn}</div>`}</td>
+      <td>${h(it.name)}${it.gift ? ' <b>(Gift wrapped)</b>' : ''}${it.ship ? '' : `<div class="sub">${it.sku ? 'SKU: ' + h(it.sku) + ' · ' : ''}HSN: ${INVOICE.hsn}</div>`}</td>
       <td class="r">${rs(t ? t.net / it.qty : it.price)}</td>
       <td class="c">${it.qty}</td>
       <td class="r">${rs(t ? t.net : it.gross)}</td>

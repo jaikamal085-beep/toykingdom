@@ -28,12 +28,14 @@ function topPicks(list, n) {
 }
 
 function initHome() {
-  const pick = (re, i) => PRODUCTS.find(p => re.test(p.name) && p.imgs.length) || PRODUCTS[i];
+  /* home banners (assets/img/bannerN.webp, smaller bannerN-m.webp for phones).
+     Each opens the matching product if it exists, otherwise a search for it. */
+  const findLink = (re, q) => { const p = PRODUCTS.find(x => re.test(x.name)); return p ? productUrl(p) : 'collection.html?q=' + encodeURIComponent(q); };
   const slides = [
-    { k: 'Toy Kingdom', t: 'Find the Perfect Toy', s: 'Top picks for your little ones — handpicked toys for every age and every budget.', p: pick(/stunt rc car/i, 0), cta: ['Shop all toys', 'collection.html'], v: 'solid' },
-    { k: 'Educational toys', t: 'Smiles start here', s: 'Toys that make learning feel like play, from music to art and more.', p: pick(/xylophone/i, 1), cta: ['Shop educational', catUrl('Educational Toys')], v: 'soft' },
-    { k: 'Baby & toddler', t: 'Happy little Hearts', s: 'Walkers, rattles and play gyms your little one will love.', p: pick(/activity walker/i, 2), cta: ['Shop fun toys', catUrl('Fun Toys')], v: 'soft' },
-    { k: 'Hotwheels & RC', t: 'Pure Happiness', s: 'Die-cast cars, track sets and remote-control racers.', p: pick(/power rocket/i, 3), cta: ['Shop Hotwheels', catUrl('Hotwheels')], v: 'solid' },
+    { src: 'assets/img/banner1', alt: 'Racing Loop Track stunt car set', href: findLink(/loop\s*track|stunt.*track|track.*loop/i, 'loop track') },
+    { src: 'assets/img/banner2', alt: 'Laser Shooting action figure', href: findLink(/laser|shooting/i, 'laser shooting') },
+    { src: 'assets/img/banner3', alt: 'Flame Drift Car, RC wireless remote control', href: findLink(/drift/i, 'drift car') },
+    { src: 'assets/img/banner4', alt: 'Racing RC car, 2.4GHz remote control', href: findLink(/formula|f1|racing\s*car|rc\s*race/i, 'racing car') },
   ];
   /* Each home section shows different products:
      New Arrivals -> most recently added; Hotwheels Corner -> Hotwheels not already shown;
@@ -50,22 +52,18 @@ function initHome() {
   const featured = topPicks(inStock.filter(p => !shown.has(String(p.id)) && !isHW(p)), 8);
 
   $('#main').innerHTML = `
-  <section class="hero"><div class="wrap">
-    <div class="hero-viewport" id="hero">
+  <section class="hero hero-b"><div class="wrap">
+    <div class="hero-viewport" id="hero" aria-roledescription="carousel" aria-label="Offers">
       <div class="hero-track" id="heroTrack">${slides.map((s, i) => `
-        <div class="hero-slide ${s.v}" aria-roledescription="slide" aria-label="${i + 1} of ${slides.length}">
-          <div><p class="hero-kicker">${esc(s.k)}</p>
-            ${i === 0 ? '<h1>' : '<h2 class="h1like">'}${esc(s.t)}${i === 0 ? '</h1>' : '</h2>'}
-            <p class="lead">${esc(s.s)}</p>
-            <a class="btn btn-lg ${s.v === 'solid' ? 'btn-white' : ''}" href="${s.cta[1]}" tabindex="${i ? -1 : 0}">${esc(s.cta[0])}${icon('right')}</a></div>
-          <a class="hero-pic" href="${productUrl(s.p)}" tabindex="-1">${img(s.p.imgs[0], s.p.name, '', true)}</a>
-        </div>`).join('')}
+        <a class="hero-banner" href="${s.href}" aria-roledescription="slide" aria-label="${i + 1} of ${slides.length}: ${esc(s.alt)}" tabindex="${i ? -1 : 0}">
+          <picture><source media="(max-width: 640px)" srcset="${s.src}-m.webp">
+            <img src="${s.src}.webp" alt="${esc(s.alt)}" width="1600" height="881" ${i ? '' : 'fetchpriority="high"'} decoding="async"></picture></a>`).join('')}
       </div>
-      <div class="hero-ctrl" id="heroCtrl">
-        <div class="dots" id="heroDots">${slides.map((_, i) => `<button aria-label="Go to slide ${i + 1}" data-i="${i}"></button>`).join('')}</div>
-        <div class="hero-arrows"><button class="cbtn" id="heroPrev" aria-label="Previous slide">${icon('left')}</button><button class="cbtn" id="heroNext" aria-label="Next slide">${icon('right')}</button></div>
-      </div>
+      <button class="cbtn hero-nav prev" id="heroPrev" aria-label="Previous banner">${icon('left')}</button>
+      <button class="cbtn hero-nav next" id="heroNext" aria-label="Next banner">${icon('right')}</button>
+      <div class="dots hero-dots" id="heroDots">${slides.map((_, i) => `<button aria-label="Go to banner ${i + 1}" data-i="${i}"></button>`).join('')}</div>
     </div>
+    <h1 class="sr-only">Toy Kingdom – find the perfect toy</h1>
   </div></section>
 
   ${carouselHTML('New Arrivals', 'collection.html?sort=new', newest, 'The latest toys just added to the kingdom')}
@@ -102,15 +100,12 @@ function initHome() {
     idx = (i + slides.length) % slides.length;
     track.style.transform = `translateX(-${idx * 100}%)`;
     dots.forEach((d, j) => d.classList.toggle('on', j === idx));
-    $$('.hero-slide', track).forEach((s, j) => { s.setAttribute('aria-hidden', j !== idx); $$('a', s).forEach(a => (a.tabIndex = j === idx ? 0 : -1)); });
-    $('#heroCtrl').style.color = slides[idx].v === 'solid' ? '#fff' : 'var(--primary)';
+    $$('.hero-banner', track).forEach((s, j) => { s.setAttribute('aria-hidden', j !== idx); s.tabIndex = j === idx ? 0 : -1; });
   };
-  const play = () => { clearInterval(timer); timer = setInterval(() => go(idx + 1), 6000); };
+  const play = () => { clearInterval(timer); timer = setInterval(() => go(idx + 1), 3500); };   // auto-scroll every 3.5 s
   dots.forEach(d => (d.onclick = () => { go(+d.dataset.i); play(); }));
   $('#heroPrev').onclick = () => { go(idx - 1); play(); };
   $('#heroNext').onclick = () => { go(idx + 1); play(); };
-  hero.addEventListener('mouseenter', () => clearInterval(timer));
-  hero.addEventListener('mouseleave', play);
   /* swipe: only a clearly sideways gesture changes the slide (scrolling the page up/down must not) */
   let x0 = null, y0 = 0;
   hero.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; clearInterval(timer); }, { passive: true });
@@ -332,21 +327,24 @@ function initProduct() {
         <div class="pprice">${priceHTML(p)}${!p.stock ? '<span class="badge muted">Sold out</span>' : o ? '<span class="badge">Sale</span>' : ''}</div>
         <ul class="plain ship-info">
           <li>${icon('truck')}<span>Delivery in <b>${SHIP.days}</b></span></li>
-          <li>${icon('tag')}<span><b>Free Shipping</b> On All Orders Above ₹ ${SHIP.freeAbove}</span></li>
-          <li>${icon('receipt')}<span><b>Partial COD</b> on orders above ₹ ${SHIP.codMin}: pay ${SHIP.codAdvancePct}% now, rest on delivery</span></li>
+          <li>${icon('tag')}<span><b>Free Shipping</b> On All Orders Above ₹ ${SHIP.freeAbove} <span class="muted">(₹${SHIP.fee} below)</span></span></li>
         </ul>
         <p class="stock ${p.stock ? 'in' : 'out'}">${icon(p.stock ? 'check' : 'close')}${p.stock ? 'In stock, ready to ship' : 'Currently out of stock'}</p>
         <div class="buy">
           <label for="qty">Quantity</label>
           <div class="qty qty-lg"><button id="qDec" aria-label="Decrease quantity">${icon('minus')}</button><input id="qty" type="number" min="1" max="99" value="1" inputmode="numeric"><button id="qInc" aria-label="Increase quantity">${icon('plus')}</button></div>
+          ${p.stock ? `<label class="gift-opt" for="giftWrap">
+            <span class="gift-ic">${icon('gift')}</span>
+            <span class="gift-txt"><b>Gift wrap <span class="gift-amt">+${inr(SHIP.giftWrap)}</span></b><span class="small muted">Wrapped in gift paper, ready to give · ${inr(SHIP.giftWrap)} per item</span></span>
+            <input type="checkbox" class="switch" role="switch" id="giftWrap" ${gifts[p.id] ? 'checked' : ''} aria-label="Gift wrap for ${inr(SHIP.giftWrap)} per item"></label>` : ''}
           <button class="btn btn-outline btn-lg btn-block" id="pdpAdd" ${p.stock ? '' : 'disabled'}>${p.stock ? 'Add to cart' : 'Sold out'}</button>
           <a class="btn btn-lg btn-block" id="pdpBuy" ${p.stock ? '' : 'aria-disabled="true"'}>Buy it now</a>
         </div>
         ${summary ? `<div class="psummary"><h2>Summary</h2><p>${esc(summary)}</p></div>` : ''}
         <div class="accordion">
           <details open><summary>Description ${icon('down')}</summary><div class="acc-body">${esc(desc)}</div></details>
-          <details><summary>Shipping &amp; returns ${icon('down')}</summary><div class="acc-body">Delivery in ${SHIP.days}. Free shipping on all orders above ₹${SHIP.freeAbove}.
-Partial cash on delivery on orders above ₹${SHIP.codMin}: pay ${SHIP.codAdvancePct}% online when you order and the rest in cash when it arrives.
+          <details><summary>Shipping &amp; returns ${icon('down')}</summary><div class="acc-body">Delivery in ${SHIP.days}. Free shipping on all orders above ₹${SHIP.freeAbove}; ₹${SHIP.fee} shipping on smaller orders.
+Gift wrapping is available for ₹${SHIP.giftWrap} per item.
 For returns and refunds, please read our <a href="${SITE.refund}">Returns &amp; Refund Policy</a>.</div></details>
           <details><summary>Need help? ${icon('down')}</summary><div class="acc-body">Call <a href="tel:+${SITE.wa}">${SITE.phoneDisplay}</a> or <a href="https://wa.me/${SITE.wa}" target="_blank" rel="noopener">chat with us on WhatsApp</a>.
 ${SITE.hours}</div></details>
@@ -400,13 +398,15 @@ ${SITE.hours}</div></details>
   /* quantity + buy */
   const qty = $('#qty');
   const getQ = () => Math.min(99, Math.max(1, parseInt(qty.value, 10) || 1));
-  const updBuy = () => { $('#pdpBuy').href = `checkout.html?buy=${encodeURIComponent(p.id)}&qty=${getQ()}`; };
+  const gift = () => !!($('#giftWrap') && $('#giftWrap').checked);
+  const updBuy = () => { $('#pdpBuy').href = `checkout.html?buy=${encodeURIComponent(p.id)}&qty=${getQ()}${gift() ? '&gift=1' : ''}`; };
+  if ($('#giftWrap')) $('#giftWrap').addEventListener('change', () => { updBuy(); if (cart[p.id]) giftSet(p.id, gift()); });
   $('#qDec').onclick = () => { qty.value = Math.max(1, getQ() - 1); updBuy(); };
   $('#qInc').onclick = () => { qty.value = Math.min(99, getQ() + 1); updBuy(); };
   qty.addEventListener('change', () => { qty.value = getQ(); updBuy(); });
   updBuy();
-  $('#pdpAdd').onclick = () => cartAdd(p.id, getQ());
-  $('#mbarAdd').onclick = () => cartAdd(p.id, getQ());
+  $('#pdpAdd').onclick = () => cartAdd(p.id, getQ(), true, gift());
+  $('#mbarAdd').onclick = () => cartAdd(p.id, getQ(), true, gift());
   $('#share').onclick = async () => {
     try { await navigator.clipboard.writeText(location.href); toast('Link copied'); }
     catch (e) { prompt('Copy this link:', location.href); }

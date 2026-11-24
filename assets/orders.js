@@ -23,8 +23,9 @@ function initOrder() {
           <h2>Items</h2>
           <ul class="plain sum-lines">${o.items.map(i => `<li>
             <a href="product.html?id=${encodeURIComponent(i.id)}" class="sum-img">${img(i.img, i.name)}<span class="sum-q">${i.qty}</span></a>
-            <a href="product.html?id=${encodeURIComponent(i.id)}" class="sum-name">${esc(i.name)}</a><b>${inr(i.price * i.qty)}</b></li>`).join('')}</ul>
+            <span class="sum-name"><a href="product.html?id=${encodeURIComponent(i.id)}">${esc(i.name)}</a>${i.gift ? `<span class="gift-tag">${icon('gift')}Gift wrapped</span>` : ''}</span><b>${inr(i.price * i.qty)}</b></li>`).join('')}</ul>
           <div class="sum-row"><span>Subtotal</span><span>${inr(o.subtotal)}</span></div>
+          ${o.giftWrap ? `<div class="sum-row"><span>Gift wrap</span><span>${inr(o.giftWrap)}</span></div>` : ''}
           <div class="sum-row"><span>Shipping</span><span>${ship}</span></div>
           <div class="sum-row total"><span>Total</span><b>${inr(o.total)}</b></div>
           <div class="cod-split">

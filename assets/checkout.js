@@ -5,7 +5,8 @@
    - Address checks: India Post PIN lookup (state must match, city/locality
      suggested), PIN typed inside the address must match, realistic mobile
      numbers only, and a final "confirm your address" review step.
-   - Payment options: full online, or partial COD (SHIP.codMin+; SHIP.codAdvancePct% now).
+   - Two steps: 1. address (+ review), 2. payment method. Gift wrap and shipping are added to the total.
+   - Payment options: full online, or partial COD (items total SHIP.codMin+; SHIP.codAdvance paid now).
    - Payment is a TEST placeholder until Razorpay is connected: confirming creates
      a test order (Orders.create) and opens order.html.
      For Razorpay: create the Razorpay order on a server for `payNow`, open
@@ -38,6 +39,28 @@ async function lookupPin(pin) {
   finally { clearTimeout(t); }
 }
 
+/* ---------- address suggestions: OpenStreetMap data via Photon (free, no key) ---------- */
+const PHOTON = 'https://photon.komoot.io/api/';
+async function photon(params) {
+  const u = new URL(PHOTON);
+  Object.entries(params).forEach(([k, v]) => [].concat(v).forEach(x => u.searchParams.append(k, x)));
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
+  try { const r = await fetch(u, { signal: ctl.signal }); return r.ok ? ((await r.json()).features || []) : []; }
+  catch (e) { return []; }                                              // offline / blocked: just no suggestions
+  finally { clearTimeout(t); }
+}
+/* centre point of a PIN code area, so suggestions stay near the customer's PIN */
+const pinCentreCache = new Map();
+async function pinCentre(pin, info) {
+  if (pinCentreCache.has(pin)) return pinCentreCache.get(pin);
+  let f = (await photon({ q: pin, limit: 5, lang: 'en' }))
+    .find(x => x.properties.countrycode === 'IN' && String(x.properties.postcode || x.properties.name || '') === pin);
+  if (!f && info && info.district) f = (await photon({ q: `${info.district}, ${info.state}`, limit: 3, lang: 'en' })).find(x => x.properties.countrycode === 'IN');
+  const c = f ? f.geometry.coordinates : null;
+  pinCentreCache.set(pin, c);
+  return c;
+}
+
 /* ---------- field checks ---------- */
 const digitsOnly = s => String(s || '').replace(/\D/g, '');
 function normPhone(v) {
@@ -67,7 +90,8 @@ function initCheckout() {
   const lines = (buyId
     ? [[buyId, Math.min(99, Math.max(1, parseInt(qs.get('qty'), 10) || 1))]]
     : Object.entries(cart))
-    .map(([id, q]) => ({ p: byId(id), q })).filter(l => l.p && l.p.stock && l.q > 0);
+    .map(([id, q]) => ({ p: byId(id), q, gift: buyId ? qs.get('gift') === '1' : !!gifts[id] }))
+    .filter(l => l.p && l.p.stock && l.q > 0);
   document.title = 'Checkout – Toy Kingdom';
 
   if (!lines.length) {
@@ -76,76 +100,91 @@ function initCheckout() {
     return;
   }
 
+  /* money: shipping and partial-COD eligibility are based on the items total */
   const subtotal = lines.reduce((s, l) => s + l.p.price * l.q, 0);
+  const giftWrap = lines.reduce((s, l) => s + (l.gift ? SHIP.giftWrap * l.q : 0), 0);
   const shipping = shippingFor(subtotal);
-  const total = subtotal + (shipping || 0);
+  const total = subtotal + giftWrap + shipping;
   const codOk = subtotal >= SHIP.codMin;
   const split = codSplit(total);
-  let mode = 'online', pinInfo = null;
+  let mode = 'online', pinInfo = null, reviewing = null, step = 'address';
 
   const field = (id, label, attrs = '', req = true, hint = '') => `<div class="field" id="f_${id}"><label for="ck_${id}">${label}${req ? ' <span class="req">*</span>' : ''}</label>
     <input id="ck_${id}" name="${id}" ${req ? 'required' : ''} ${attrs}>${hint ? `<p class="small muted hint">${hint}</p>` : ''}<p class="field-err" id="e_${id}"></p></div>`;
-  const shipText = shipping === 0 ? '<b class="free">Free</b>' : shipping ? inr(shipping) : 'Confirmed after order';
 
   main.innerHTML = `<div class="wrap page checkout">
     <nav class="crumbs" aria-label="Breadcrumb"><a href="index.html">Home</a>${icon('right')}<span>Checkout</span></nav>
     <h1>Checkout</h1>
+    <ol class="steps" id="steps" aria-label="Checkout steps">
+      <li data-s="address"><span class="sn">1</span><span>Address</span></li>
+      <li data-s="payment"><span class="sn">2</span><span>Payment</span></li>
+      <li data-s="done"><span class="sn">3</span><span>Order placed</span></li>
+    </ol>
     <div class="checkout-grid">
-      <form class="panel cform" id="ckForm" novalidate autocomplete="on">
-        <h2>Delivery address</h2>
-        <div class="note" id="savedNote" hidden></div>
-        <div class="frow">${field('name', 'Full name (as on doorbell / ID)', 'autocomplete="name" maxlength="60"')}
-          ${field('phone', 'Mobile number', 'type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" placeholder="10-digit mobile"', true, 'The courier will call this number.')}</div>
-        <div class="frow">${field('pincode', 'PIN code', 'inputmode="numeric" autocomplete="postal-code" maxlength="6" placeholder="6 digits"')}
-          ${field('alt', 'Alternate mobile', 'type="tel" inputmode="numeric" maxlength="14" placeholder="Optional"', false)}</div>
-        <p class="pin-status" id="pinStatus" role="status"></p>
-        ${field('house', 'House / flat no., building', 'autocomplete="address-line1" maxlength="80" placeholder="e.g. 12B, Lotus Apartments"')}
-        ${field('area', 'Street, area / locality', 'autocomplete="address-line2" maxlength="120" list="pinPlaces" placeholder="e.g. 2nd Street, Anna Nagar"')}
-        <datalist id="pinPlaces"></datalist>
-        ${field('landmark', 'Landmark', 'maxlength="80" placeholder="e.g. Near Murugan Temple (optional)"', false)}
-        <div class="frow">${field('city', 'City / town', 'autocomplete="address-level2" maxlength="50"')}
-          <div class="field" id="f_state"><label for="ck_state">State <span class="req">*</span></label>
-            <select id="ck_state" name="state" class="select" autocomplete="address-level1" required><option value="">Select state</option>${STATES.map(s => `<option>${s}</option>`).join('')}</select>
-            <p class="field-err" id="e_state"></p></div></div>
+      <div class="ck-main">
+        <!-- STEP 1: delivery address -->
+        <form class="panel cform" id="ckForm" novalidate autocomplete="on">
+          <h2>Delivery address</h2>
+          <div class="note" id="savedNote" hidden></div>
+          <div class="frow">${field('name', 'Full name (as on doorbell / ID)', 'autocomplete="name" maxlength="60"')}
+            ${field('phone', 'Mobile number', 'type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" placeholder="10-digit mobile"', true, 'The courier will call this number.')}</div>
+          <div class="frow">${field('pincode', 'PIN code', 'inputmode="numeric" autocomplete="postal-code" maxlength="6" placeholder="6 digits"')}
+            ${field('alt', 'Alternate mobile', 'type="tel" inputmode="numeric" maxlength="14" placeholder="Optional"', false)}</div>
+          <p class="pin-status" id="pinStatus" role="status"></p>
+          ${field('house', 'House / flat no., building', 'autocomplete="address-line1" maxlength="80" placeholder="e.g. 12B, Lotus Apartments"')}
+          ${field('area', 'Street, area / locality', 'autocomplete="off" maxlength="120" placeholder="Start typing: e.g. 2nd Street, Anna Nagar"')}
+          ${field('landmark', 'Landmark', 'autocomplete="off" maxlength="80" placeholder="e.g. Near Murugan Temple (optional)"', false)}
+          <div class="frow">${field('city', 'City / town', 'autocomplete="address-level2" maxlength="50"')}
+            <div class="field" id="f_state"><label for="ck_state">State <span class="req">*</span></label>
+              <select id="ck_state" name="state" class="select" autocomplete="address-level1" required><option value="">Select state</option>${STATES.map(s => `<option>${s}</option>`).join('')}</select>
+              <p class="field-err" id="e_state"></p></div></div>
+          <p class="form-msg" id="ckMsg" role="status"></p>
+          <button class="btn btn-lg btn-block" type="submit">Continue to payment ${icon('right')}</button>
+        </form>
 
-        <h2 class="mt">Payment</h2>
-        <div class="pay-opts" role="radiogroup" aria-label="Payment method">
-          <label class="pay-opt"><input type="radio" name="pay" value="online" checked>
-            <span><b>Pay full amount online</b><span class="small muted">UPI, cards, net banking and wallets via Razorpay</span></span>
-            <b class="pay-amt">${inr(total)}</b></label>
-          <label class="pay-opt ${codOk ? '' : 'off'}"><input type="radio" name="pay" value="cod" ${codOk ? '' : 'disabled'}>
-            <span><b>Partial Cash on Delivery</b>
-              <span class="small muted">${codOk
-                ? `Pay ${SHIP.codAdvancePct}% (${inr(split.now)}) online now, ${inr(split.later)} in cash on delivery`
-                : `Available on orders of ${inr(SHIP.codMin)} and above. Add ${inr(SHIP.codMin - subtotal)} more to use it.`}</span></span>
-            ${codOk ? `<b class="pay-amt">${inr(split.now)}</b>` : ''}</label>
-        </div>
-        <p class="small muted">Test mode: no real payment is taken yet.</p>
-
-        <p class="form-msg" id="ckMsg" role="status"></p>
-        <button class="btn btn-lg btn-block" type="submit" id="payBtn"></button>
-        <p class="small muted center-text secure-line">${icon('lock')} Payments will be processed securely by Razorpay.</p>
-        <p class="small muted center-text">By placing an order you agree to our <a class="link" href="${SITE.refund}">Returns &amp; Refund Policy</a>.</p>
-      </form>
+        <!-- STEP 2: payment method -->
+        <section class="panel cform" id="payStep" hidden>
+          <div class="ship-to">
+            <div><h2>Delivering to</h2><p class="addr-block" id="shipTo"></p></div>
+            <button class="btn btn-outline btn-sm" type="button" id="changeAddr">Change</button>
+          </div>
+          <h2 class="mt">Payment method</h2>
+          <div class="pay-opts" role="radiogroup" aria-label="Payment method">
+            <label class="pay-opt"><input type="radio" name="pay" value="online" checked>
+              <span><b>Pay full amount online</b><span class="small muted">UPI, cards, net banking and wallets via Razorpay</span></span>
+              <b class="pay-amt">${inr(total)}</b></label>
+            <label class="pay-opt ${codOk ? '' : 'off'}"><input type="radio" name="pay" value="cod" ${codOk ? '' : 'disabled'}>
+              <span><b>Partial Cash on Delivery</b>
+                <span class="small muted">${codOk
+                  ? `Pay ${inr(split.now)} online now, ${inr(split.later)} in cash when it arrives`
+                  : `Available on orders of ${inr(SHIP.codMin)} and above. Add ${inr(SHIP.codMin - subtotal)} more to use it.`}</span></span>
+              ${codOk ? `<b class="pay-amt">${inr(split.now)}</b>` : ''}</label>
+          </div>
+          <p class="small muted">Test mode: no real payment is taken yet.</p>
+          <p class="form-msg" id="payMsg" role="status"></p>
+          <button class="btn btn-lg btn-block" type="button" id="placeBtn"></button>
+          <p class="small muted center-text secure-line">${icon('lock')} Payments will be processed securely by Razorpay.</p>
+          <p class="small muted center-text">By placing an order you agree to our <a class="link" href="${SITE.refund}">Returns &amp; Refund Policy</a>.</p>
+        </section>
+      </div>
 
       <aside class="panel order-sum">
         <h2>Order summary</h2>
-        <ul class="plain sum-lines">${lines.map(({ p, q }) => `<li>
+        <ul class="plain sum-lines">${lines.map(({ p, q, gift }) => `<li>
           <a href="${productUrl(p)}" class="sum-img">${img(p.imgs[0], p.name)}<span class="sum-q">${q}</span></a>
-          <a href="${productUrl(p)}" class="sum-name">${esc(p.name)}</a><b>${inr(p.price * q)}</b></li>`).join('')}</ul>
+          <span class="sum-name"><a href="${productUrl(p)}">${esc(p.name)}</a>${gift ? `<span class="gift-tag">${icon('gift')}Gift wrapped</span>` : ''}</span><b>${inr(p.price * q)}</b></li>`).join('')}</ul>
         <div class="sum-row"><span>Subtotal</span><span>${inr(subtotal)}</span></div>
-        <div class="sum-row"><span>Shipping</span><span>${shipText}</span></div>
+        ${giftWrap ? `<div class="sum-row"><span>Gift wrap</span><span>${inr(giftWrap)}</span></div>` : ''}
+        <div class="sum-row"><span>Shipping</span><span>${shipping === 0 ? '<b class="free">Free</b>' : inr(shipping)}</span></div>
         ${shipping === 0 ? '' : `<p class="small note">Add ${inr(SHIP.freeAbove - subtotal)} more for <b>free shipping</b> (orders above ₹${SHIP.freeAbove}).</p>`}
-        <div class="sum-row total"><span>Total</span><b>${inr(total)}${shipping === null ? ' + shipping' : ''}</b></div>
+        <div class="sum-row total"><span>Total</span><b>${inr(total)}</b></div>
         <div class="cod-split" id="codSplit" hidden>
-          <div class="sum-row"><span>Pay now (${SHIP.codAdvancePct}% online)</span><b>${inr(split.now)}</b></div>
+          <div class="sum-row"><span>Pay now (online)</span><b>${inr(split.now)}</b></div>
           <div class="sum-row"><span>Pay on delivery (cash)</span><b>${inr(split.later)}</b></div>
         </div>
-        ${!codOk ? `<p class="small muted">Partial COD unlocks at ${inr(SHIP.codMin)}. Add ${inr(SHIP.codMin - subtotal)} more.</p>` : ''}
         <ul class="plain ship-info">
           <li>${icon('truck')}<span>Delivery in <b>${SHIP.days}</b></span></li>
           <li>${icon('tag')}<span><b>Free Shipping</b> On All Orders Above ₹ ${SHIP.freeAbove}</span></li>
-          <li>${icon('receipt')}<span><b>Partial COD</b> on orders above ₹ ${SHIP.codMin}</span></li>
         </ul>
       </aside>
     </div>
@@ -153,23 +192,36 @@ function initCheckout() {
 
   <div class="modal" id="review" role="dialog" aria-modal="true" aria-labelledby="reviewTitle" hidden>
     <div class="modal-card">
-      <h2 id="reviewTitle">Confirm your delivery address</h2>
-      <p class="small muted">Please read it once more. Parcels can't be redirected after they're shipped.</p>
+      <h2 id="reviewTitle">Can you confirm your address?</h2>
       <div class="addr-preview" id="addrPreview"></div>
-      <ul class="plain checks" id="checks"></ul>
-      <label class="check confirm-check"><input type="checkbox" id="confirmAddr"> I have checked that the name, mobile number and full address are correct.</label>
-      <p class="form-msg" id="reviewMsg" role="status"></p>
       <div class="modal-actions">
         <button class="btn btn-outline" type="button" id="editAddr">Edit address</button>
-        <button class="btn" type="button" id="placeBtn" disabled></button>
+        <button class="btn" type="button" id="useAddr">Yes, deliver here ${icon('right')}</button>
       </div>
     </div>
   </div>`;
 
-  const form = $('#ckForm'), msg = $('#ckMsg');
+  const form = $('#ckForm'), msg = $('#ckMsg'), payStep = $('#payStep');
   const F = k => $('#ck_' + k);
   const setErr = (k, text) => { const e = $('#e_' + k); if (e) e.textContent = text || ''; $('#f_' + k)?.classList.toggle('err', !!text); };
-  const payNow = () => (mode === 'cod' ? split.now : total);
+
+  /* ---------- steps (browser Back goes from Payment to Address) ---------- */
+  function showStep(s, push) {
+    if (s === 'payment' && !reviewing) s = 'address';
+    step = s;
+    form.hidden = s !== 'address';
+    payStep.hidden = s !== 'payment';
+    const order = ['address', 'payment', 'done'];
+    $$('#steps li').forEach(li => {
+      const i = order.indexOf(li.dataset.s), cur = order.indexOf(s);
+      li.classList.toggle('on', i === cur); li.classList.toggle('done', i < cur);
+      if (i === cur) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+    });
+    if (push) history.pushState({ ck: s }, '', s === 'payment' ? '#payment' : location.pathname + location.search);
+    if (push !== undefined) $('#steps').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  addEventListener('popstate', e => showStep((e.state && e.state.ck) || 'address', false));
+  history.replaceState({ ck: 'address' }, '', location.pathname + location.search);
 
   /* ---------- prefill: last used address ---------- */
   F('name').value = me.name || '';
@@ -199,7 +251,6 @@ function initCheckout() {
     if (info.ok) {
       st.className = 'pin-status ok';
       st.innerHTML = `${icon('check')} PIN ${pin}: <b>${esc(info.district)}, ${esc(info.state)}</b>`;
-      $('#pinPlaces').innerHTML = info.places.map(p => `<option value="${esc(p)}">`).join('');
       if (matchState(info.state)) F('state').value = matchState(info.state);
       if (!F('city').value.trim()) F('city').value = info.district;
       validate(['state', 'city']);
@@ -207,8 +258,7 @@ function initCheckout() {
       st.className = 'pin-status bad'; st.textContent = '';
       setErr('pincode', `PIN code ${pin} doesn’t exist in India Post records. Please check it.`);
     } else {
-      st.className = 'pin-status warn';
-      st.textContent = 'Couldn’t verify the PIN code right now (no connection to India Post). Please double-check it.';
+      st.className = 'pin-status'; st.textContent = '';          // India Post unreachable: say nothing, don't block
     }
   }
   F('pincode').addEventListener('input', checkPin);
@@ -245,33 +295,78 @@ function initCheckout() {
     return first;
   }
   form.addEventListener('focusout', e => { const k = (e.target.name || ''); if (CHECKS[k] && e.target.value) validate([k]); });
+  form.addEventListener('input', () => { reviewing = null; });           // address edited: confirm it again
 
-  /* soft warnings shown in the review step */
-  function warnings(a) {
-    const w = [];
-    if (pinInfo && pinInfo.ok && pinInfo.pin === a.pincode) {
-      const known = [pinInfo.district, ...pinInfo.places, ...pinInfo.blocks].map(s => s.toLowerCase());
-      const city = a.city.toLowerCase();
-      if (!known.some(k => k.includes(city) || city.includes(k)))
-        w.push(`City “${esc(a.city)}” isn't listed for PIN ${a.pincode} (${esc(pinInfo.district)} district). Please make sure both are right.`);
-    } else if (!pinInfo || pinInfo.offline) w.push('We couldn’t verify the PIN code online. Please double-check it.');
-    if (a.house.length + a.area.length < 15) w.push('The address is quite short. Add a street name or landmark so the courier can find you.');
-    return w;
+  /* ---------- address suggestions while typing (street/area and landmark) ---------- */
+  function attachSuggest(key, layers) {
+    const inp = F(key), box = document.createElement('div');
+    box.className = 'addr-sug'; box.id = 'sug_' + key; box.hidden = true; box.setAttribute('role', 'listbox');
+    inp.setAttribute('aria-controls', box.id); inp.setAttribute('aria-autocomplete', 'list');
+    $('#f_' + key).append(box);
+    let items = [], active = -1, seq = 0, timer = 0;
+    const close = () => { box.hidden = true; active = -1; };
+    const render = () => {
+      if (!items.length) return close();
+      box.innerHTML = items.map((it, i) => `<button type="button" class="sug ${i === active ? 'on' : ''}" data-i="${i}" role="option">${icon('pin')}
+          <span><b>${esc(it.main)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span></button>`).join('')
+        + '<p class="sug-src">Suggestions from India Post &amp; © OpenStreetMap</p>';
+      box.hidden = false;
+    };
+    const pick = it => {
+      inp.value = it.fill;
+      if (it.city && !F('city').value.trim()) F('city').value = it.city;
+      setErr(key, ''); reviewing = null; close();
+    };
+    async function query() {
+      const raw = cleanSpaces(inp.value), my = ++seq;
+      const near = key === 'landmark' && /^near\s+/i.test(raw);
+      const q = raw.replace(/^near\s+/i, '');
+      if (q.length < 3) { items = []; return close(); }
+      const pin = digitsOnly(F('pincode').value);
+      const pinOk = pinInfo && pinInfo.ok && pinInfo.pin === pin;
+      /* 1. post offices of this PIN (India Post) */
+      const local = key === 'area' && pinOk
+        ? pinInfo.places.filter(p => p.toLowerCase().includes(q.toLowerCase())).slice(0, 3)
+            .map(p => ({ main: p, sub: `${pinInfo.district}, ${pinInfo.state} - ${pin}`, fill: p }))
+        : [];
+      /* 2. streets, areas and landmarks near the PIN (OpenStreetMap) */
+      const centre = pinOk ? await pinCentre(pin, pinInfo) : null;
+      const params = { q, limit: 8, lang: 'en', layer: layers,
+        bbox: centre ? [centre[0] - 0.2, centre[1] - 0.2, centre[0] + 0.2, centre[1] + 0.2].map(n => n.toFixed(3)).join(',') : '68,6,98,37' };
+      const feats = await photon(params);
+      if (my !== seq) return;                                             // a newer search already started
+      const seen = new Set(local.map(x => x.fill.toLowerCase()));
+      const remote = feats.filter(f => f.properties.countrycode === 'IN').map(f => {
+        const p = f.properties, main = p.name || p.street;
+        if (!main) return null;
+        const area = p.district || p.locality || '';
+        const sub = [p.street && p.street !== main ? p.street : '', area !== main ? area : '', p.city || p.county || '', p.postcode].filter(Boolean).join(', ');
+        const fill = key === 'area' ? [main, area && area !== main ? area : ''].filter(Boolean).join(', ') : (near ? 'Near ' : '') + main;
+        return { main, sub, fill, city: p.city || '' };
+      }).filter(x => x && !seen.has(x.fill.toLowerCase()) && seen.add(x.fill.toLowerCase()));
+      items = [...local, ...remote].slice(0, 7); active = -1; render();
+    }
+    inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(query, 300); });
+    inp.addEventListener('keydown', e => {
+      if (box.hidden || !items.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; render(); }
+      else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pick(items[active]); }
+      else if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    });
+    box.addEventListener('mousedown', e => e.preventDefault());           // keep focus in the field
+    box.addEventListener('click', e => { const b = e.target.closest('.sug'); if (b) pick(items[+b.dataset.i]); });
+    inp.addEventListener('blur', () => setTimeout(close, 150));
   }
+  attachSuggest('area', ['street', 'locality', 'district']);
+  attachSuggest('landmark', ['house', 'street', 'locality']);
 
-  /* ---------- payment mode ---------- */
-  function syncMode() {
-    mode = (form.querySelector('input[name=pay]:checked') || {}).value || 'online';
-    $$('.pay-opt', form).forEach(l => l.classList.toggle('on', $('input', l).checked));
-    $('#codSplit').hidden = mode !== 'cod';
-    $('#payBtn').innerHTML = `Continue · ${mode === 'cod' ? `pay ${inr(split.now)} now` : `pay ${inr(total)}`}`;
-  }
-  form.addEventListener('change', e => { if (e.target.name === 'pay') syncMode(); });
-  syncMode();
+  const addrHTML = (a, district) => `<b>${esc(a.name)}</b><br>${esc(a.house)}<br>${esc(a.area)}${a.landmark ? `<br>Landmark: ${esc(a.landmark)}` : ''}
+      <br>${esc(a.city)}${district && district.toLowerCase() !== a.city.toLowerCase() ? ` (${esc(district)} district)` : ''}, ${esc(a.state)} - <b>${a.pincode}</b>
+      <br>Mobile: <b>${a.phone.replace(/(\d{5})(\d{5})/, '$1 $2')}</b>${a.alt ? ` · Alternate: ${a.alt.replace(/(\d{5})(\d{5})/, '$1 $2')}` : ''}`;
 
-  /* ---------- review step ---------- */
+  /* ---------- step 1 -> address review ---------- */
   const modal = $('#review');
-  let reviewing = null;
+  let pending = null;
   form.addEventListener('submit', async e => {
     e.preventDefault();
     msg.className = 'form-msg'; msg.textContent = '';
@@ -281,41 +376,49 @@ function initCheckout() {
     const a = values();
     const stray = strayPin(a);
     if (stray) { setErr('area', stray); msg.className = 'form-msg bad'; msg.textContent = stray; F('area').focus(); return; }
-    if (mode === 'cod' && !codOk) { msg.className = 'form-msg bad'; msg.textContent = `Partial COD is available on orders of ${inr(SHIP.codMin)} and above.`; return; }
 
-    reviewing = { ...a, district: pinInfo && pinInfo.ok ? pinInfo.district : '', verified: !!(pinInfo && pinInfo.ok) };
-    $('#addrPreview').innerHTML = `<b>${esc(a.name)}</b><br>${esc(a.house)}<br>${esc(a.area)}${a.landmark ? `<br>Landmark: ${esc(a.landmark)}` : ''}
-      <br>${esc(a.city)}${reviewing.district && reviewing.district.toLowerCase() !== a.city.toLowerCase() ? ` (${esc(reviewing.district)} district)` : ''}, ${esc(a.state)} - <b>${a.pincode}</b>
-      <br>Mobile: <b>${a.phone.replace(/(\d{5})(\d{5})/, '$1 $2')}</b>${a.alt ? ` · Alternate: ${a.alt.replace(/(\d{5})(\d{5})/, '$1 $2')}` : ''}`;
-    const warn = warnings(a);
-    $('#checks').innerHTML = (reviewing.verified ? `<li class="ok">${icon('check')} PIN ${a.pincode} matches ${esc(pinInfo.district)}, ${esc(pinInfo.state)}</li>` : '')
-      + `<li class="ok">${icon('check')} Mobile number looks valid</li>`
-      + warn.map(w => `<li class="warn">${icon('close')} ${w}</li>`).join('');
-    $('#confirmAddr').checked = false;
-    $('#placeBtn').disabled = true;
-    $('#placeBtn').textContent = mode === 'cod' ? `Confirm & pay ${inr(split.now)} (test)` : `Confirm & pay ${inr(total)} (test)`;
-    $('#reviewMsg').textContent = '';
+    pending = { ...a, district: pinInfo && pinInfo.ok ? pinInfo.district : '', verified: !!(pinInfo && pinInfo.ok) };
+    $('#addrPreview').innerHTML = addrHTML(a, pending.district);
     modal.hidden = false; document.body.classList.add('modal-open');
-    $('#confirmAddr').focus();
+    $('#useAddr').focus();
   });
   const closeModal = () => { modal.hidden = true; document.body.classList.remove('modal-open'); };
   $('#editAddr').onclick = () => { closeModal(); F('house').focus(); };
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
-  $('#confirmAddr').addEventListener('change', e => { $('#placeBtn').disabled = !e.target.checked; });
+
+  /* ---------- step 2: payment ---------- */
+  $('#useAddr').onclick = () => {
+    reviewing = pending;
+    closeModal();
+    $('#shipTo').innerHTML = addrHTML(reviewing, reviewing.district);
+    $('#payMsg').textContent = '';
+    showStep('payment', true);
+  };
+  $('#changeAddr').onclick = () => history.back();
+
+  function syncMode() {
+    mode = (payStep.querySelector('input[name=pay]:checked') || {}).value || 'online';
+    $$('.pay-opt', payStep).forEach(l => l.classList.toggle('on', $('input', l).checked));
+    $('#codSplit').hidden = mode !== 'cod';
+    $('#placeBtn').innerHTML = `${icon('lock')} Place order · pay ${inr(mode === 'cod' ? split.now : total)} (test)`;
+  }
+  payStep.addEventListener('change', e => { if (e.target.name === 'pay') syncMode(); });
+  syncMode();
 
   /* ---------- place the (test) order ---------- */
   $('#placeBtn').onclick = async () => {
-    const btn = $('#placeBtn'), rmsg = $('#reviewMsg');
-    btn.disabled = true; $('#editAddr').disabled = true;
+    const btn = $('#placeBtn'), pmsg = $('#payMsg');
+    if (!reviewing) { showStep('address', false); return; }
+    if (mode === 'cod' && !codOk) { pmsg.className = 'form-msg bad'; pmsg.textContent = `Partial COD is available on orders of ${inr(SHIP.codMin)} and above.`; return; }
+    btn.disabled = true; $('#changeAddr').disabled = true;
     btn.textContent = 'Processing test payment…';
     try {
       await new Promise(r => setTimeout(r, 900));                          // stands in for Razorpay Checkout
-      const now = Date.now();
       const order = {
-        id: Orders.newId(), uid: me.uid, email: me.email, created: now, status: 'placed', test: true,
-        items: lines.map(({ p, q }) => ({ id: String(p.id), name: p.name, sku: p.sku || '', price: p.price, mrp: p.mrp || p.price, qty: q, img: p.imgs[0] || '' })),
-        subtotal, shipping, total,
+        id: Orders.newId(), uid: me.uid, email: me.email, created: Date.now(), status: 'placed', test: true,
+        items: lines.map(({ p, q, gift }) => ({ id: String(p.id), name: p.name, sku: p.sku || '', price: p.price, mrp: p.mrp || p.price, qty: q, img: p.imgs[0] || '', gift: !!gift })),
+        subtotal, giftWrap, shipping, total,
         payment: mode === 'cod'
           ? { mode: 'cod', method: 'Partial COD', paidNow: split.now, dueOnDelivery: split.later, status: 'advance paid (test)' }
           : { mode: 'online', method: 'Online', paidNow: total, dueOnDelivery: 0, status: 'paid (test)' },
@@ -323,11 +426,14 @@ function initCheckout() {
       };
       const saved = await Orders.create(order);
       await Profile.saveAddress(reviewing);
-      if (!buyId) { cart = {}; saveCart(); renderCart(); }
+      if (!buyId) { cart = {}; saveCart(); gifts = {}; saveGifts(); renderCart(); }
+      showStep('done', false);
       location.href = `order.html?id=${encodeURIComponent(saved.id)}&new=1`;
     } catch (err) {
-      rmsg.className = 'form-msg bad'; rmsg.textContent = err.message || 'Could not place the order.';
-      btn.disabled = false; $('#editAddr').disabled = false; btn.textContent = 'Try again';
+      pmsg.className = 'form-msg bad'; pmsg.textContent = err.message || 'Could not place the order.';
+      btn.disabled = false; $('#changeAddr').disabled = false; syncMode();
     }
   };
+
+  showStep('address');
 }

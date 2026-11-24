@@ -126,16 +126,17 @@ function day(t) { return Utilities.formatDate(new Date(Number(t)), 'Asia/Kolkata
 
 function itemsTable(o) {
   const rows = o.items.map(function (i) {
-    return '<tr><td style="padding:8px;border-bottom:1px solid #eee">' + esc(i.name) + '</td>' +
+    return '<tr><td style="padding:8px;border-bottom:1px solid #eee">' + esc(i.name) + (i.gift ? ' <b>(Gift wrapped)</b>' : '') + '</td>' +
       '<td style="padding:8px;border-bottom:1px solid #eee;text-align:center">' + i.qty + '</td>' +
       '<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">' + rs(i.price * i.qty) + '</td></tr>';
   }).join('');
   const ship = o.shipping === 0 ? 'Free' : (o.shipping ? rs(o.shipping) : 'To be confirmed');
   const p = o.payment || {};
   return '<table style="width:100%;border-collapse:collapse;font-size:14px">' +
-    '<tr style="background:#F5F0FF"><th style="padding:8px;text-align:left">Item</th><th style="padding:8px">Qty</th><th style="padding:8px;text-align:right">Amount</th></tr>' +
+    '<tr style="background:#F8EDFD"><th style="padding:8px;text-align:left">Item</th><th style="padding:8px">Qty</th><th style="padding:8px;text-align:right">Amount</th></tr>' +
     rows +
     '<tr><td colspan="2" style="padding:6px 8px">Subtotal</td><td style="padding:6px 8px;text-align:right">' + rs(o.subtotal) + '</td></tr>' +
+    (o.giftWrap ? '<tr><td colspan="2" style="padding:6px 8px">Gift wrap</td><td style="padding:6px 8px;text-align:right">' + rs(o.giftWrap) + '</td></tr>' : '') +
     '<tr><td colspan="2" style="padding:6px 8px">Shipping</td><td style="padding:6px 8px;text-align:right">' + ship + '</td></tr>' +
     '<tr><td colspan="2" style="padding:8px;font-weight:bold">Total</td><td style="padding:8px;text-align:right;font-weight:bold">' + rs(o.total) + '</td></tr>' +
     '<tr><td colspan="2" style="padding:6px 8px">Paid online' + (o.test ? ' (test)' : '') + '</td><td style="padding:6px 8px;text-align:right">' + rs(p.paidNow) + '</td></tr>' +
@@ -149,9 +150,9 @@ function addressBlock(a) {
 }
 function shell(inner) {
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#313131">' +
-    '<div style="background:#8649FB;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0;font-size:20px;font-weight:bold">' + CFG.storeName + '</div>' +
+    '<div style="background:#9D10DB;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0;font-size:20px;font-weight:bold">' + CFG.storeName + '</div>' +
     '<div style="border:1px solid #eee;border-top:0;padding:22px;border-radius:0 0 12px 12px">' + inner + '</div>' +
-    '<p style="font-size:12px;color:#888;text-align:center;margin-top:14px">' + CFG.storeName + ' · ' + CFG.phone + ' · <a href="' + CFG.siteUrl + '" style="color:#8649FB">' + CFG.siteUrl + '</a></p></div>';
+    '<p style="font-size:12px;color:#888;text-align:center;margin-top:14px">' + CFG.storeName + ' · ' + CFG.phone + ' · <a href="' + CFG.siteUrl + '" style="color:#9D10DB">' + CFG.siteUrl + '</a></p></div>';
 }
 
 /* Plain-text version of the e-mail (sent together with the HTML version) */
@@ -160,7 +161,9 @@ function plainText(o, admin) {
   const lines = [];
   if (o.test) lines.push('TEST ORDER: no money was taken.', '');
   lines.push(admin ? 'New order ' + o.id + ' (' + day(o.created) + ')' : 'Hi ' + a.name.split(' ')[0] + ', thank you! Your order ' + o.id + ' is confirmed.', '');
-  o.items.forEach(function (i) { lines.push('- ' + i.name + ' x ' + i.qty + ' = ' + rs(i.price * i.qty)); });
+  o.items.forEach(function (i) { lines.push('- ' + i.name + ' x ' + i.qty + ' = ' + rs(i.price * i.qty) + (i.gift ? ' (gift wrapped)' : '')); });
+  if (o.giftWrap) lines.push('Gift wrap: ' + rs(o.giftWrap));
+  lines.push('Shipping: ' + (o.shipping ? rs(o.shipping) : 'Free'));
   lines.push('', 'Total: ' + rs(o.total), 'Paid online: ' + rs(p.paidNow) + (p.dueOnDelivery ? ' | Pay on delivery (cash): ' + rs(p.dueOnDelivery) : ''), '');
   lines.push((admin ? 'Ship to: ' : 'Delivering to: ') + a.name + ', ' + a.house + ', ' + a.area + (a.landmark ? ', Landmark: ' + a.landmark : '') + ', ' + a.city + ', ' + a.state + ' - ' + a.pincode + ' | Mobile: ' + a.phone);
   lines.push('');
@@ -180,7 +183,7 @@ function customerHtml(o) {
     itemsTable(o) +
     '<h3 style="margin:22px 0 6px">Delivering to</h3><p style="margin:0;line-height:1.6">' + addressBlock(a) + '</p>' +
     '<p style="margin:16px 0">Delivery in <b>3-5 working days</b>. Your bill is attached as a PDF.</p>' +
-    '<p><a href="' + CFG.siteUrl + 'order.html?id=' + encodeURIComponent(o.id) + '" style="background:#8649FB;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;display:inline-block">View your order</a></p>' +
+    '<p><a href="' + CFG.siteUrl + 'order.html?id=' + encodeURIComponent(o.id) + '" style="background:#9D10DB;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;display:inline-block">View your order</a></p>' +
     '<p style="font-size:13px;color:#666">Questions? Reply to this e-mail or WhatsApp us at <a href="https://wa.me/' + CFG.whatsapp + '">' + CFG.phone + '</a>.<br>' +
     'Returns: damaged or defective items only, with a 360° unboxing video sent on WhatsApp within 24 hours of delivery.</p>');
 }
@@ -197,7 +200,7 @@ function adminHtml(o) {
     itemsTable(o) +
     '<h3 style="margin:22px 0 6px">Ship to</h3><p style="margin:0;line-height:1.6">' + addressBlock(a) + '</p>' +
     '<p style="margin:16px 0">Attached: <b>shipping label</b> (print on A4 and paste on the parcel) and the <b>bill</b> (put inside the parcel).</p>' +
-    '<p><a href="' + CFG.siteUrl + 'admin.html" style="background:#8649FB;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;display:inline-block">Open admin orders</a></p>');
+    '<p><a href="' + CFG.siteUrl + 'admin.html" style="background:#9D10DB;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;display:inline-block">Open admin orders</a></p>');
 }
 
 /** Run this once from the editor (select it, click Run) to check e-mail works and to grant permission. */

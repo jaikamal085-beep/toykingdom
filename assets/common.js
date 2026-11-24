@@ -9,7 +9,7 @@ const SITE = {
   legalName: 'Toy Kingdom',
   address: ['09, Teacher’s Colony, 2nd Street', 'N.K. Road', 'Thanjavur, Tamil Nadu - 613006'],
   state: 'Tamil Nadu',
-  logo: IMG_BASE + '2025/04/toykingdomlogo.png',
+  logo: 'assets/img/logo.webp',
   refund: 'refund-policy.html', account: 'https://toykingdomonline.com/my-account/',
 };
 const CATEGORIES = [
@@ -53,6 +53,7 @@ const ICONS = {
   chat: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H9l-5 4V5.5Z"/>',
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1-1"/>',
+  gift: '<rect x="3.5" y="8" width="17" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12M12 8c-1.5-3.5-5.5-4-5.5-1.5S10 8 12 8Zm0 0c1.5-3.5 5.5-4 5.5-1.5S14 8 12 8Z"/>',
   receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6"/>',
   instagram: '<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="3.8"/><circle cx="17.2" cy="6.8" r=".4" fill="currentColor"/>',
   youtube: '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="m10.2 9.3 4.6 2.7-4.6 2.7V9.3Z"/>',
@@ -62,7 +63,7 @@ const icon = (name, cls = '') =>
   `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
 const PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#F5F0FF"/><rect x="34" y="38" width="32" height="26" rx="3" fill="none" stroke="#8649FB" stroke-width="2"/><circle cx="43" cy="47" r="3" fill="none" stroke="#8649FB" stroke-width="2"/><path d="m36 62 10-9 6 5 5-4 8 8" fill="none" stroke="#8649FB" stroke-width="2"/></svg>');
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#F8EDFD"/><rect x="34" y="38" width="32" height="26" rx="3" fill="none" stroke="#9D10DB" stroke-width="2"/><circle cx="43" cy="47" r="3" fill="none" stroke="#9D10DB" stroke-width="2"/><path d="m36 62 10-9 6 5 5-4 8 8" fill="none" stroke="#9D10DB" stroke-width="2"/></svg>');
 function imgFail(el) { el.onerror = null; el.src = PLACEHOLDER; }
 
 /* Adds a Cloudinary transformation (resize/compress) to an untransformed Cloudinary URL. */
@@ -114,13 +115,14 @@ const fmtDate = (t, withTime = false) => new Date(t).toLocaleString('en-IN', wit
   : { day: 'numeric', month: 'short', year: 'numeric' });
 
 /* Delivery & payment rules (used by the product page, cart and checkout)
-   freeAbove:     orders of this amount or more ship free
-   fee:           shipping charge below freeAbove; null = not decided yet ("confirmed after order")
-   codMin:        partial cash-on-delivery is offered from this order amount
-   codAdvancePct: share paid online in advance with partial COD; the rest is paid in cash */
-const SHIP = { days: '3-5 Working Days', freeAbove: 499, fee: null, codMin: 799, codAdvancePct: 20 };
-const shippingFor = subtotal => subtotal >= SHIP.freeAbove ? 0 : SHIP.fee;           // null = to be confirmed
-const codSplit = total => { const now = Math.ceil(total * SHIP.codAdvancePct / 100); return { now, later: total - now }; };
+   freeAbove:  orders (items total) of this amount or more ship free
+   fee:        shipping charge below freeAbove
+   codMin:     partial cash-on-delivery is offered from this items total (shown only at checkout)
+   codAdvance: fixed amount paid online in advance with partial COD; the rest is paid in cash
+   giftWrap:   gift wrapping charge per wrapped item */
+const SHIP = { days: '3-5 Working Days', freeAbove: 499, fee: 50, codMin: 799, codAdvance: 99, giftWrap: 30 };
+const shippingFor = subtotal => subtotal >= SHIP.freeAbove ? 0 : SHIP.fee;
+const codSplit = total => { const now = Math.min(SHIP.codAdvance, total); return { now, later: total - now }; };
 
 /* ============ Shared UI pieces ============ */
 function priceHTML(p) {
@@ -250,10 +252,10 @@ function renderHeader() {
     <div class="sheet-head"><h2>Your cart</h2><button class="ibtn" data-close aria-label="Close cart">${icon('close')}</button></div>
     <div class="sheet-body" id="cartBody"></div>
     <div class="sheet-foot" id="cartFoot" hidden>
+      <div class="subtotal sub-gift" id="cartGiftRow" hidden><span>Gift wrap</span><span id="cartGift">₹0</span></div>
       <div class="subtotal"><span>Subtotal</span><b id="cartTotal">₹0</b></div>
-      <p class="small muted">${icon('truck')} Free shipping on orders above ₹${SHIP.freeAbove} · Partial COD above ₹${SHIP.codMin} · Delivery in ${SHIP.days}</p>
+      <p class="small muted">${icon('truck')} Free shipping on orders above ₹${SHIP.freeAbove} (₹${SHIP.fee} below) · Delivery in ${SHIP.days}</p>
       <a class="btn btn-lg btn-block" href="checkout.html">${icon('lock')}Checkout</a>
-      <a class="btn btn-outline btn-block" id="cartCheckout" target="_blank" rel="noopener">${icon('whatsapp')}Order on WhatsApp</a>
       <button class="btn btn-outline btn-block" data-close>Continue shopping</button>
     </div>
   </aside>`;
@@ -264,7 +266,7 @@ function renderFooter() {
   <footer class="footer">
     <div class="wrap footer-grid">
       <div class="f-brand">
-        <span class="logo-text">Toy Kingdom</span>
+        <img class="f-logo" src="${SITE.logo}" alt="Toy Kingdom" width="138" height="60">
         <p>Find the perfect toy — educational toys, fun toys, RC toys, gadgets and Hotwheels for happy little hearts.</p>
         ${socialLinks()}
       </div>
@@ -336,15 +338,22 @@ const CART_KEY = 'tk-cart-v2';
 let cart = {};
 try { cart = JSON.parse(localStorage.getItem(CART_KEY)) || {}; } catch (e) { cart = {}; }
 function saveCart() { try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) { /* storage unavailable */ } }
-function cartAdd(id, qty = 1, open = true) {
+/* gift wrap choice per product in the cart: { id: true } */
+const GIFT_KEY = 'tk-gift-v1';
+let gifts = {};
+try { gifts = JSON.parse(localStorage.getItem(GIFT_KEY)) || {}; } catch (e) { gifts = {}; }
+function saveGifts() { try { localStorage.setItem(GIFT_KEY, JSON.stringify(gifts)); } catch (e) { /* storage unavailable */ } }
+function giftSet(id, on) { if (on) gifts[id] = true; else delete gifts[id]; saveGifts(); renderCart(); }
+function cartAdd(id, qty = 1, open = true, gift) {
   const p = byId(id);
   if (!p || !p.stock) return;
   cart[p.id] = Math.min(99, (cart[p.id] || 0) + qty);
+  if (gift !== undefined) { if (gift) gifts[p.id] = true; else delete gifts[p.id]; saveGifts(); }
   saveCart(); renderCart();
   if (open) openLayer($('#cartSheet')); else toast('Added to cart');
 }
 function cartSet(id, qty) {
-  if (qty <= 0) delete cart[id]; else cart[id] = Math.min(99, qty);
+  if (qty <= 0) { delete cart[id]; if (gifts[id]) { delete gifts[id]; saveGifts(); } } else cart[id] = Math.min(99, qty);
   saveCart(); renderCart();
 }
 const qtyHTML = (id, q) => `<div class="qty"><button data-dec="${id}" aria-label="Decrease quantity">${icon('minus')}</button><span>${q}</span><button data-inc="${id}" aria-label="Increase quantity">${icon('plus')}</button></div>`;
@@ -357,19 +366,21 @@ function renderCart() {
     body.innerHTML = `<div class="cart-empty">${icon('bag')}<p>Your cart is empty</p><a class="btn" href="collection.html">Continue shopping</a></div>`;
     foot.hidden = true; return;
   }
-  let total = 0;
+  let total = 0, wrap = 0;
   body.innerHTML = ids.map(id => {
     const p = byId(id), q = cart[id]; total += p.price * q;
+    if (gifts[id]) wrap += SHIP.giftWrap * q;
     return `<div class="cline">
       <a href="${productUrl(p)}" class="cline-img">${img(p.imgs[0], p.name)}</a>
       <div class="cline-info"><a href="${productUrl(p)}" class="cline-name">${esc(p.name)}</a><span class="muted">${inr(p.price)}</span>
-        <div class="cline-row">${qtyHTML(id, q)}<button class="link" data-remove="${id}">Remove</button></div></div>
+        <div class="cline-row">${qtyHTML(id, q)}<button class="link" data-remove="${id}">Remove</button></div>
+        <label class="gift-mini">${icon('gift')}Gift wrap <span class="muted">+${inr(SHIP.giftWrap)}${q > 1 ? ' each' : ''}</span><input type="checkbox" class="switch sm" role="switch" data-gift="${id}" ${gifts[id] ? 'checked' : ''} aria-label="Gift wrap"></label></div>
       <b>${inr(p.price * q)}</b></div>`;
   }).join('');
   foot.hidden = false;
-  $('#cartTotal').textContent = inr(total);
-  const lines = ids.map(id => { const p = byId(id); return `• ${p.name} × ${cart[id]} = ${inr(p.price * cart[id])}`; }).join('\n');
-  $('#cartCheckout').href = waLink(`Hi Toy Kingdom! I'd like to order:\n${lines}\n\nTotal: ${inr(total)}`);
+  $('#cartGiftRow').hidden = !wrap;
+  $('#cartGift').textContent = inr(wrap);
+  $('#cartTotal').textContent = inr(total + wrap);
 }
 
 /* ============ Boot (after login state and products have loaded) ============ */
@@ -395,5 +406,40 @@ document.addEventListener('click', e => {
   else if (t.id === 'cartOpen') openLayer($('#cartSheet'));
   else if (t.id === 'navOpen') openLayer($('#navSheet'));
 });
+document.addEventListener('change', e => { const g = e.target.closest('[data-gift]'); if (g) giftSet(g.dataset.gift, g.checked); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLayers(); });
-addEventListener('storage', e => { if (e.key === CART_KEY) { try { cart = JSON.parse(e.newValue) || {}; } catch (_) { cart = {}; } renderCart(); } });
+addEventListener('storage', e => {
+  if (e.key === GIFT_KEY) { try { gifts = JSON.parse(e.newValue) || {}; } catch (_) { gifts = {}; } renderCart(); }
+  if (e.key === CART_KEY) { try { cart = JSON.parse(e.newValue) || {}; } catch (_) { cart = {}; } renderCart(); } });
+
+/* ============ Scroll reveal: content fades and slides up as it scrolls into view ============ */
+(function () {
+  const SEL = '.sec-head,.card,.tile,.feature,.gallery,.pinfo,.psummary,.accordion,.policy-body,.policy-side,.ccard,.ocard,.page-head,.toolbar';
+  if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const io = new IntersectionObserver(entries => {
+    let n = 0;
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      const el = e.target;
+      el.style.transitionDelay = Math.min(n++, 5) * 40 + 'ms';     // small stagger for items that appear together
+      el.classList.add('rv-in');
+      io.unobserve(el);
+      setTimeout(() => { el.style.transitionDelay = ''; el.classList.remove('rv', 'rv-in'); el.dataset.rv = '1'; }, 700);   // hand back hover effects
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
+  const scan = root => {
+    if (!(root instanceof Element)) return;
+    const list = root.matches(SEL) ? [root] : [];
+    list.push(...root.querySelectorAll(SEL));
+    list.forEach(el => {
+      if (el.classList.contains('rv') || el.dataset.rv || el.closest('.sheet,.modal,.hs-results,.layer,.admin-grid,.checkout')) return;
+      el.classList.add('rv'); io.observe(el);
+    });
+  };
+  const start = () => {
+    document.documentElement.classList.add('rv-on');
+    scan(document.body);
+    new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(scan))).observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
