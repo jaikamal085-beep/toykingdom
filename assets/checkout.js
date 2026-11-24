@@ -132,8 +132,8 @@ function initCheckout() {
             ${field('alt', 'Alternate mobile', 'type="tel" inputmode="numeric" maxlength="14" placeholder="Optional"', false)}</div>
           <p class="pin-status" id="pinStatus" role="status"></p>
           ${field('house', 'House / flat no., building', 'autocomplete="address-line1" maxlength="80" placeholder="e.g. 12B, Lotus Apartments"')}
-          ${field('area', 'Street, area / locality', 'autocomplete="off" maxlength="120" placeholder="Start typing: e.g. 2nd Street, Anna Nagar"')}
-          ${field('landmark', 'Landmark', 'autocomplete="off" maxlength="80" placeholder="e.g. Near Murugan Temple (optional)"', false)}
+          ${field('area', 'Street, area / locality', 'autocomplete="tk-street-area" maxlength="120" placeholder="Start typing: e.g. 2nd Street, Anna Nagar"')}
+          ${field('landmark', 'Landmark', 'autocomplete="tk-landmark" maxlength="80" placeholder="e.g. Near Murugan Temple (optional)"', false)}
           <div class="frow">${field('city', 'City / town', 'autocomplete="address-level2" maxlength="50"')}
             <div class="field" id="f_state"><label for="ck_state">State <span class="req">*</span></label>
               <select id="ck_state" name="state" class="select" autocomplete="address-level1" required><option value="">Select state</option>${STATES.map(s => `<option>${s}</option>`).join('')}</select>
@@ -303,59 +303,82 @@ function initCheckout() {
     box.className = 'addr-sug'; box.id = 'sug_' + key; box.hidden = true; box.setAttribute('role', 'listbox');
     inp.setAttribute('aria-controls', box.id); inp.setAttribute('aria-autocomplete', 'list');
     $('#f_' + key).append(box);
-    let items = [], active = -1, seq = 0, timer = 0;
+    let items = [], active = -1, seq = 0, timer = 0, pressing = false;
     const close = () => { box.hidden = true; active = -1; };
-    const render = () => {
-      if (!items.length) return close();
-      box.innerHTML = items.map((it, i) => `<button type="button" class="sug ${i === active ? 'on' : ''}" data-i="${i}" role="option">${icon('pin')}
+    const pinNow = () => { const pin = digitsOnly(F('pincode').value); return pinInfo && pinInfo.ok && pinInfo.pin === pin ? pin : ''; };
+    const render = (note = '') => {
+      if (!items.length && !note) return close();
+      box.innerHTML = (note ? `<p class="sug-note">${note}</p>` : '')
+        + items.map((it, i) => `<button type="button" class="sug ${i === active ? 'on' : ''}" data-i="${i}" role="option">${icon('pin')}
           <span><b>${esc(it.main)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span></button>`).join('')
-        + '<p class="sug-src">Suggestions from India Post &amp; © OpenStreetMap</p>';
+        + (items.length ? '<p class="sug-src">Suggestions from India Post &amp; © OpenStreetMap</p>' : '');
       box.hidden = false;
+      if (innerWidth < 700) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });   // keep it above the phone keyboard
     };
     const pick = it => {
       inp.value = it.fill;
       if (it.city && !F('city').value.trim()) F('city').value = it.city;
       setErr(key, ''); reviewing = null; close();
     };
+    /* the PIN's own localities from India Post (shown first, and on focus before typing) */
+    const postOffices = (q, pin) => key !== 'area' || !pin ? [] : pinInfo.places
+      .filter(p => !q || p.toLowerCase().includes(q.toLowerCase()))
+      .map(p => ({ main: p, sub: `${pinInfo.district}, ${pinInfo.state} - ${pin}`, fill: p }));
+
     async function query() {
       const raw = cleanSpaces(inp.value), my = ++seq;
       const near = key === 'landmark' && /^near\s+/i.test(raw);
       const q = raw.replace(/^near\s+/i, '');
-      if (q.length < 3) { items = []; return close(); }
-      const pin = digitsOnly(F('pincode').value);
-      const pinOk = pinInfo && pinInfo.ok && pinInfo.pin === pin;
-      /* 1. post offices of this PIN (India Post) */
-      const local = key === 'area' && pinOk
-        ? pinInfo.places.filter(p => p.toLowerCase().includes(q.toLowerCase())).slice(0, 3)
-            .map(p => ({ main: p, sub: `${pinInfo.district}, ${pinInfo.state} - ${pin}`, fill: p }))
-        : [];
-      /* 2. streets, areas and landmarks near the PIN (OpenStreetMap) */
-      const centre = pinOk ? await pinCentre(pin, pinInfo) : null;
-      const params = { q, limit: 8, lang: 'en', layer: layers,
-        bbox: centre ? [centre[0] - 0.2, centre[1] - 0.2, centre[0] + 0.2, centre[1] + 0.2].map(n => n.toFixed(3)).join(',') : '68,6,98,37' };
+      const pin = pinNow();
+      if (q.length < 3) {                                                  // not enough to search yet
+        items = key === 'area' && pin ? postOffices('', pin).slice(0, 6) : [];
+        active = -1; return render(pin || q.length === 0 ? '' : '');
+      }
+      if (!pin) { items = []; active = -1; return render('Enter a valid <b>PIN code</b> above to see streets and areas near you.'); }
+      const local = postOffices(q, pin).slice(0, 3);
+      const centre = await pinCentre(pin, pinInfo);
+      if (my !== seq) return;
+      const params = { q, limit: 12, lang: 'en', layer: layers };
+      if (centre) params.bbox = [centre[0] - 0.2, centre[1] - 0.2, centre[0] + 0.2, centre[1] + 0.2].map(n => n.toFixed(3)).join(',');
+      else params.q = `${q}, ${pinInfo.district}, ${pinInfo.state}`;
       const feats = await photon(params);
-      if (my !== seq) return;                                             // a newer search already started
+      if (my !== seq) return;                                              // a newer search already started
+      /* rank: same PIN first, then same district/locality names, drop other postal regions */
+      const near3 = pin.slice(0, 3), known = [pinInfo.district, ...pinInfo.places, ...pinInfo.blocks].map(s => s.toLowerCase());
       const seen = new Set(local.map(x => x.fill.toLowerCase()));
       const remote = feats.filter(f => f.properties.countrycode === 'IN').map(f => {
         const p = f.properties, main = p.name || p.street;
         if (!main) return null;
+        const pc = String(p.postcode || '').replace(/\D/g, '');
+        if (pc.length === 6 && pc.slice(0, 3) !== near3) return null;
         const area = p.district || p.locality || '';
-        const sub = [p.street && p.street !== main ? p.street : '', area !== main ? area : '', p.city || p.county || '', p.postcode].filter(Boolean).join(', ');
+        const town = p.city || p.county || '';
+        let score = 0;
+        if (pc === pin) score += 3; else if (pc.slice(0, 3) === near3) score += 1;
+        if ([town, area].some(t => t && known.some(k => k.includes(t.toLowerCase()) || t.toLowerCase().includes(k)))) score += 2;
+        if (main.toLowerCase().startsWith(q.toLowerCase())) score += 1;
+        const sub = [p.street && p.street !== main ? p.street : '', area !== main ? area : '', town, p.postcode].filter(Boolean).join(', ');
         const fill = key === 'area' ? [main, area && area !== main ? area : ''].filter(Boolean).join(', ') : (near ? 'Near ' : '') + main;
-        return { main, sub, fill, city: p.city || '' };
-      }).filter(x => x && !seen.has(x.fill.toLowerCase()) && seen.add(x.fill.toLowerCase()));
-      items = [...local, ...remote].slice(0, 7); active = -1; render();
+        return { main, sub, fill, city: p.city || '', score };
+      }).filter(x => x && !seen.has(x.fill.toLowerCase()) && seen.add(x.fill.toLowerCase()))
+        .sort((a, b) => b.score - a.score);
+      items = [...local, ...remote].slice(0, 7); active = -1;
+      render(items.length ? '' : 'No matches found. Just type your full street / area name.');
     }
     inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(query, 300); });
+    inp.addEventListener('focus', () => { if (!inp.value.trim() || box.hidden) query(); });
     inp.addEventListener('keydown', e => {
       if (box.hidden || !items.length) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; render(); }
       else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pick(items[active]); }
       else if (e.key === 'Escape') { e.stopPropagation(); close(); }
     });
-    box.addEventListener('mousedown', e => e.preventDefault());           // keep focus in the field
-    box.addEventListener('click', e => { const b = e.target.closest('.sug'); if (b) pick(items[+b.dataset.i]); });
-    inp.addEventListener('blur', () => setTimeout(close, 150));
+    /* taps: keep the list open while a finger/mouse is pressed on it, so the tap isn't lost when the keyboard closes */
+    box.addEventListener('pointerdown', () => { pressing = true; });
+    box.addEventListener('mousedown', e => e.preventDefault());            // keep focus in the field
+    box.addEventListener('click', e => { pressing = false; const b = e.target.closest('.sug'); if (b) pick(items[+b.dataset.i]); });
+    document.addEventListener('pointerup', () => setTimeout(() => { pressing = false; }, 400));
+    inp.addEventListener('blur', () => setTimeout(() => { if (!pressing) close(); }, 250));
   }
   attachSuggest('area', ['street', 'locality', 'district']);
   attachSuggest('landmark', ['house', 'street', 'locality']);

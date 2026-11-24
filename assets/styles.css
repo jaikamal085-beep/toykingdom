@@ -886,3 +886,5 @@ body.modal-open{overflow:hidden}
 .addr-sug .sug small{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .addr-sug .sug:hover,.addr-sug .sug.on{background:var(--primary-50)}
 .addr-sug .sug-src{font-size:11px;color:var(--muted);padding:6px 10px 2px;border-top:1px solid var(--line);margin-top:4px}
+
+.addr-sug .sug-note{font-size:13px;color:var(--muted);padding:8px 10px;margin:0}
