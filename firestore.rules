@@ -95,10 +95,8 @@ service cloud.firestore {
     }
 
     match /orders/{id} {
-      // TEST phase: the payment server saves test orders with the customer's login, and
-      // orderOk re-checks everything. BEFORE GOING LIVE (rzp_live_ key + server key in
-      // Apps Script) change this line to:   allow create: if false;
-      allow create: if signedIn() && orderOk(id, request.resource.data);
+      // Live payments: only the Apps Script server (using FIREBASE_SERVICE_ACCOUNT) can create orders.
+      allow create: if false;
       allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
       // only the admin changes an order, and only its status
       allow update: if isAdmin()

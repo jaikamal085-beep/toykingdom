@@ -113,7 +113,7 @@ function doPost(e) {
         Razorpay (amount, order, captured), then saves the order as paid.
    ===================================================================== */
 const PAY = {
-  keyId: 'rzp_test_U45clzycX4Yiar',             // public Key ID (rzp_test_... = test mode, rzp_live_... = real money)
+  keyId: 'rzp_live_U4SpgbUzNkbxZk',             // public Key ID (rzp_test_... = test mode, rzp_live_... = real money)
   freeAbove: 499, fee: 50, codMin: 999, codAdvance: 99, giftWrap: 30,
   maxLines: 8,
 };
